@@ -16,6 +16,14 @@ type Parser struct {
 	filename string
 }
 
+func (p *Parser) base(parent Object) ObjectBase {
+	return ObjectBase{
+		parent:   parent,
+		filename: p.filename,
+		offset:   p.dec.InputOffset(),
+	}
+}
+
 func (p *Parser) parseValue(parent Object) (Object, error) {
 	token, err := p.dec.Token()
 	if err != nil {
@@ -37,45 +45,28 @@ func (p *Parser) parseValue(parent Object) (Object, error) {
 			tok = path.Join(p.cwd, tok)
 		}
 		return ObjectString{
-			ObjectBase{
-				parent:   parent,
-				filename: p.filename,
-				offset:   p.dec.InputOffset(),
-			},
+			p.base(parent),
 			tok,
 		}, nil
 	case float64:
 		return ObjectNumber{
-			ObjectBase{
-				parent:   parent,
-				filename: p.filename,
-				offset:   p.dec.InputOffset(),
-			},
+			p.base(parent),
 			tok,
 		}, nil
 	case bool:
 		return ObjectBoolean{
-			ObjectBase{
-				parent:   parent,
-				filename: p.filename,
-				offset:   p.dec.InputOffset(),
-			},
+			p.base(parent),
 			tok,
 		}, nil
-
 	}
-	return nil, fmt.Errorf("")
+	return nil, fmt.Errorf("%s: invalid type %T", p.base(nil).position(), token)
 }
 
 func (p *Parser) parseMap(parent Object) (Object, error) {
 	result := ObjectMap{
-		ObjectBase: ObjectBase{
-			parent:   parent,
-			filename: p.filename,
-			offset:   p.dec.InputOffset(),
-		},
-		defines: make(map[string]Object),
-		values:  make(map[string]Object),
+		ObjectBase: p.base(parent),
+		defines:    make(map[string]Object),
+		values:     make(map[string]Object),
 	}
 
 	for p.dec.More() {
@@ -127,11 +118,8 @@ func (p *Parser) parseMap(parent Object) (Object, error) {
 }
 
 func (p *Parser) parseArray(parent Object) (Object, error) {
-	obj := ObjectArray{}
-	obj.ObjectBase = ObjectBase{
-		parent:   parent,
-		filename: p.filename,
-		offset:   p.dec.InputOffset(),
+	obj := ObjectArray{
+		ObjectBase: p.base(parent),
 	}
 	for p.dec.More() {
 		value, err := p.parseValue(parent)
