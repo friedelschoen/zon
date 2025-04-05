@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"io"
 	"maps"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path"
@@ -90,8 +91,15 @@ func encodeEnviron(obj Object, root bool) (string, error) {
 }
 
 func (ev *Evaluator) output(result Object) (Object, error) {
+	values := result.value.(map[string]Object)
+
 	hashlib := fnv.New64()
 	hashValue(hashlib, result)
+	if impureAny, ok := values["@impure"]; ok {
+		if impure, ok := impureAny.value.(bool); ok && impure {
+			fmt.Fprint(hashlib, rand.Int())
+		}
+	}
 	hashstr := hex.EncodeToString(hashlib.Sum(nil))
 
 	names := make([]string, 0)
@@ -124,8 +132,6 @@ func (ev *Evaluator) output(result Object) (Object, error) {
 			os.RemoveAll(outdir)
 		}
 	}()
-
-	values := result.value.(map[string]Object)
 
 	install, ok := values["@output"].value.(string)
 	if !ok {
