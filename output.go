@@ -5,109 +5,55 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"maps"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 )
 
-func hashValue(w io.Writer, obj Object) {
-	switch value := obj.value.(type) {
-	case map[string]Object:
-		fmt.Fprint(w, "map")
-		keys := slices.Collect(maps.Keys(value))
-		slices.Sort(keys)
-		for _, k := range keys {
-			w.Write([]byte(k))
-			hashValue(w, value[k])
-		}
-	case []Object:
-		fmt.Fprint(w, "list")
-		for i, elem := range value {
-			fmt.Fprint(w, i)
-			hashValue(w, elem)
-		}
-	default: /* string, bool, float64 */
-		fmt.Fprintf(w, "%T", value)
-		fmt.Fprint(w, value)
-	}
+type Edge [2]string
+
+type Evaluator struct {
+	Force        bool
+	DryRun       bool
+	CacheDir     string
+	LogDir       string
+	Serial       bool
+	Interpreter  string
+	NoEvalOutput bool
+
+	Edges []Edge
 }
 
-func encodeEnviron(obj Object, root bool) (string, error) {
-	switch value := obj.value.(type) {
-	case string:
-		return value, nil
-	case float64:
-		return strconv.FormatFloat(value, 'f', -1, 64), nil
-	case bool:
-		if value {
-			return "1", nil
+func (ev *Evaluator) output(result ObjectMap) (Object, error) {
+	impure := false
+	if impureAny, ok := result.values["@impure"]; ok {
+		if impureVal, ok := impureAny.(ObjectBoolean); ok {
+			impure = impureVal.value
 		}
-		return "0", nil
-	case []Object:
-		if !root {
-			return "", fmt.Errorf("%s: unable to encode nested %T", obj.position(), value)
-		}
-		var builder strings.Builder
-		for i, elem := range value {
-			if i > 0 {
-				builder.WriteByte(' ')
-			}
-			enc, err := encodeEnviron(elem, false)
-			if err != nil {
-				return "", err
-			}
-			builder.WriteString(enc)
-		}
-		return builder.String(), nil
-	case map[string]Object:
-		if !root {
-			return "", fmt.Errorf("%s: unable to encode nested %T", obj.position(), value)
-		}
-		var builder strings.Builder
-		first := true
-		for key, elem := range value {
-			if !first {
-				builder.WriteByte(' ')
-			}
-			first = false
-			builder.WriteString(key)
-			builder.WriteByte('=')
-			enc, err := encodeEnviron(elem, false)
-			if err != nil {
-				return "", err
-			}
-			builder.WriteString(enc)
-		}
-		return builder.String(), nil
-	default:
-		return "", fmt.Errorf("%s: unable to encode %T", obj.position(), value)
 	}
-}
 
-func (ev *Evaluator) output(result Object) (Object, error) {
-	values := result.value.(map[string]Object)
-
+	var hashsum []byte
 	hashlib := fnv.New64()
-	hashValue(hashlib, result)
-	if impureAny, ok := values["@impure"]; ok {
-		if impure, ok := impureAny.value.(bool); ok && impure {
-			fmt.Fprint(hashlib, rand.Int())
+	if impure {
+		hashsum = make([]byte, hashlib.Size())
+		for i := range hashsum {
+			hashsum[i] = byte(rand.Int())
 		}
+	} else {
+		result.hashValue(hashlib)
+		hashsum = hashlib.Sum(nil)
 	}
-	hashstr := hex.EncodeToString(hashlib.Sum(nil))
+	hashstr := hex.EncodeToString(hashsum[:])
 
-	names := make([]string, 0)
-	for node := &result; node != nil; node = node.parent {
-		if mapv, ok := node.value.(map[string]Object); ok {
-			if nameAny, ok := mapv["@name"]; ok {
-				if name, ok := nameAny.value.(string); ok && (len(names) == 0 || names[len(names)-1] != name) {
-					names = append(names, name)
+	var names []string
+	for node := Object(result); node != nil; node = node.Parent() {
+		if mapv, ok := node.(ObjectMap); ok {
+			if nameAny, ok := mapv.values["@name"]; ok {
+				if name, ok := nameAny.(ObjectString); ok && (len(names) == 0 || names[len(names)-1] != name.value) {
+					names = append(names, name.value)
 				}
 			}
 		}
@@ -120,7 +66,7 @@ func (ev *Evaluator) output(result Object) (Object, error) {
 	cwd, _ := os.Getwd()
 	outdir := path.Join(cwd, ev.CacheDir, hashstr)
 	if _, err := os.Stat(outdir); (ev.DryRun || err == nil) && !ev.Force {
-		return Object{value: outdir}, nil
+		return ObjectString{value: outdir}, nil
 	}
 
 	start := time.Now()
@@ -133,31 +79,31 @@ func (ev *Evaluator) output(result Object) (Object, error) {
 		}
 	}()
 
-	install, ok := values["@output"].value.(string)
+	install, ok := result.values["@output"].(ObjectString)
 	if !ok {
-		return Object{}, fmt.Errorf("%s: @output must be a string", values["@output"].position())
+		return nil, fmt.Errorf("%s: @output must be a string", result.values["@output"].position())
 	}
 
 	interpreter := ev.Interpreter
-	if interpreterAny, ok := values["@interpreter"]; ok {
-		if str, ok := interpreterAny.value.(string); ok {
-			interpreter = str
+	if interpreterAny, ok := result.values["@interpreter"]; ok {
+		if str, ok := interpreterAny.(ObjectString); ok {
+			interpreter = str.value
 		} else {
-			return Object{}, fmt.Errorf("%s: @interpreter must be a string", interpreterAny.position())
+			return nil, fmt.Errorf("%s: @interpreter must be a string", interpreterAny.position())
 		}
 	}
 
 	builddir, err := os.MkdirTemp("", "bake-")
 	if err != nil {
-		return Object{}, err
+		return nil, err
 	}
 	defer os.RemoveAll(builddir)
 	environ := append(os.Environ(), "out="+outdir)
-	for key, value := range values {
+	for key, value := range result.values {
 		if key != "" && key[0] == '$' {
-			enc, err := encodeEnviron(value, true)
+			enc, err := value.encodeEnviron(true)
 			if err != nil {
-				return Object{}, err
+				return nil, err
 			}
 			environ = append(environ, key[1:]+"="+enc)
 		}
@@ -170,14 +116,14 @@ func (ev *Evaluator) output(result Object) (Object, error) {
 	logbuf := &RingBuffer{Content: make([]byte, 1024)}
 	stdout := io.MultiWriter(logfile, logbuf)
 
-	cmd := exec.Command(interpreter, "-e", "-c", install)
+	cmd := exec.Command(interpreter, "-e", "-c", install.value)
 	cmd.Env = environ
 	cmd.Dir = builddir
 	cmd.Stdin = nil
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 	if err := cmd.Run(); err != nil {
-		return Object{}, fmt.Errorf("%s: %w\n", values["@output"].position(), err)
+		return nil, fmt.Errorf("%s: %w\n", install.position(), err)
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
@@ -188,5 +134,5 @@ func (ev *Evaluator) output(result Object) (Object, error) {
 	}
 
 	success = true
-	return Object{value: outdir}, nil
+	return ObjectString{value: outdir}, nil
 }

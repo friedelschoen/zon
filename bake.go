@@ -53,7 +53,7 @@ func main() {
 	scope := make(map[string]Object)
 	for _, arg := range flag.Args() {
 		if name, value, ok := strings.Cut(arg, "="); ok {
-			scope[name] = Object{filename: "<commandline>", value: value}
+			scope[name] = ObjectString{ObjectBase{filename: "<commandline>"}, value}
 		} else if filename == "" {
 			filename = arg
 		} else {
@@ -67,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ast, err := parseFile(Object{filename: "<commandline>"}, filename, nil)
+	ast, err := parseFile(ObjectString{ObjectBase{filename: "<commandline>"}, filename}, nil)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -76,7 +76,7 @@ func main() {
 	os.MkdirAll(ev.CacheDir, 0755)
 	os.MkdirAll(ev.LogDir, 0755)
 
-	res, err := ev.resolve(ast, scope)
+	res, err := ast.resolve(scope, &ev)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -89,31 +89,9 @@ func main() {
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(res)
 	} else {
-		switch res := res.value.(type) {
-		case string:
-			fmt.Printf("%s\n", res)
-			if !noResult {
-				os.Remove(resultName)
-				os.Symlink(res, resultName)
-			}
-		case []any:
-			for i, r := range res {
-				rs, ok := r.(string)
-				if !ok {
-					fmt.Printf("expected string[]\n")
-					os.Exit(1)
-				}
-				filename := fmt.Sprintf("%s-%d", resultName, i)
-				fmt.Printf("%s\n", res)
-				if !noResult {
-					if stat, err := os.Stat(filename); err != nil && (stat.Mode()&os.ModeSymlink) == 0 {
-						fmt.Printf("unable to make symlink: exist\n")
-					} else {
-						os.Remove(filename)
-						os.Symlink(rs, filename)
-					}
-				}
-			}
+		if noResult {
+			resultName = ""
 		}
+		res.symlink(resultName)
 	}
 }
