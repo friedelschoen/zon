@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path"
@@ -17,69 +16,10 @@ type Parser struct {
 	filename string
 }
 
-type Object struct {
-	parent   *Object
-	filename string
-	offset   int64
-	defines  map[string]Object
-	includes []Object
-	extends  []Object
-	value    any
-}
-
-func (o Object) position() string {
-	if o.filename == "" {
-		return "<unknown>"
-	}
-	file, err := os.Open(o.filename)
-	if err != nil {
-		return fmt.Sprintf("%s:1:%d", o.filename, o.offset)
-	}
-	defer file.Close()
-
-	var (
-		line       = 1
-		lineOffset = int64(0)
-		buf        = make([]byte, 4096)
-		total      = int64(0)
-	)
-
-	for {
-		n, err := file.Read(buf)
-		if n == 0 && err != nil {
-			break
-		}
-		for i := range n {
-			if total == o.offset {
-				return fmt.Sprintf("%s:%d:%d", path.Base(o.filename), line, int(o.offset-lineOffset))
-			}
-			if buf[i] == '\n' {
-				line++
-				lineOffset = total + 1
-			}
-			total++
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "<unknown>"
-		}
-	}
-
-	// If offset is beyond EOF, fallback to last known position
-	return fmt.Sprintf("%s:%d:%d", path.Base(o.filename), line, int(o.offset-lineOffset))
-}
-
-func (o Object) MarshalJSON() ([]byte, error) {
-	/* TODO: implement @include ... */
-	return json.Marshal(o.value)
-}
-
-func (p *Parser) parseValue(parent *Object) (Object, error) {
+func (p *Parser) parseValue(parent Object) (Object, error) {
 	token, err := p.dec.Token()
 	if err != nil {
-		return Object{}, err
+		return nil, err
 	}
 
 	switch tok := token.(type) {
@@ -90,112 +30,127 @@ func (p *Parser) parseValue(parent *Object) (Object, error) {
 		case '[':
 			return p.parseArray(parent)
 		default:
-			return Object{}, nil
+			return nil, nil
 		}
 	case string:
 		if strings.HasPrefix(tok, "./") {
 			tok = path.Join(p.cwd, tok)
 		}
-		return Object{
-			parent:   parent,
-			filename: p.filename,
-			offset:   p.dec.InputOffset(),
-			value:    tok,
+		return ObjectString{
+			ObjectBase{
+				parent:   parent,
+				filename: p.filename,
+				offset:   p.dec.InputOffset(),
+			},
+			tok,
 		}, nil
-	default:
-		return Object{
-			parent:   parent,
-			filename: p.filename,
-			offset:   p.dec.InputOffset(),
-			value:    tok,
+	case float64:
+		return ObjectNumber{
+			ObjectBase{
+				parent:   parent,
+				filename: p.filename,
+				offset:   p.dec.InputOffset(),
+			},
+			tok,
 		}, nil
+	case bool:
+		return ObjectBoolean{
+			ObjectBase{
+				parent:   parent,
+				filename: p.filename,
+				offset:   p.dec.InputOffset(),
+			},
+			tok,
+		}, nil
+
 	}
+	return nil, fmt.Errorf("")
 }
 
-func (p *Parser) parseMap(parent *Object) (Object, error) {
-	values := make(map[string]Object)
-	result := Object{
-		parent:   parent,
-		filename: p.filename,
-		offset:   p.dec.InputOffset(),
-		defines:  make(map[string]Object),
-		value:    values,
+func (p *Parser) parseMap(parent Object) (Object, error) {
+	result := ObjectMap{
+		ObjectBase: ObjectBase{
+			parent:   parent,
+			filename: p.filename,
+			offset:   p.dec.InputOffset(),
+		},
+		defines: make(map[string]Object),
+		values:  make(map[string]Object),
 	}
 
 	for p.dec.More() {
 		key, err := p.dec.Token()
 		if err != nil {
-			return Object{}, err
+			return nil, err
 		}
 		keyStr, ok := key.(string)
 		if !ok {
-			return Object{}, fmt.Errorf("%s: expected string-key, got %T", result.position(), key)
+			return nil, fmt.Errorf("%s: expected string-key, got %T", result.position(), key)
 		}
-		value, err := p.parseValue(&result)
+		value, err := p.parseValue(result)
 		if err != nil {
-			return Object{}, err
+			return nil, err
 		}
 		switch keyStr {
 		case "@define":
-			defs, ok := value.value.(map[string]Object)
+			defs, ok := value.(ObjectMap)
 			if !ok {
-				return Object{}, fmt.Errorf("%s: @define must be a map, got %T", value.position(), value)
+				return nil, fmt.Errorf("%s: @define must be a map, got %T", value.position(), value)
 			}
-			maps.Copy(result.defines, defs)
+			maps.Copy(result.defines, defs.values)
 		case "@expand":
-			_, ok := value.value.(string)
+			str, ok := value.(ObjectString)
 			if !ok {
-				return Object{}, fmt.Errorf("%s: @expand variable must be string, got %T", value.position(), value)
+				return nil, fmt.Errorf("%s: @expand variable must be string, got %T", value.position(), value)
 			}
-			result.extends = append(result.extends, value)
+			result.extends = append(result.extends, str)
 		case "@include":
-			_, ok := value.value.(string)
+			str, ok := value.(ObjectString)
 			if !ok {
-				return Object{}, fmt.Errorf("%s: @include must be a string, got %T", value.position(), value)
+				return nil, fmt.Errorf("%s: @include must be a string, got %T", value.position(), value)
 			}
-			result.includes = append(result.includes, value)
+			result.includes = append(result.includes, str)
 		default:
-			values[keyStr] = value
+			result.values[keyStr] = value
 		}
 	}
 	_, err := p.dec.Token() // Consume '}'
 
-	if attr, ok := values["@"]; ok {
-		if len(values) != 1 {
-			return Object{}, fmt.Errorf("%s: map with @ has more than 1 value", values["@"].position())
+	if attr, ok := result.values["@"]; ok {
+		if len(result.values) != 1 {
+			return nil, fmt.Errorf("%s: map with @ has more than 1 value", result.values["@"].position())
 		}
-		result.value = attr
+		result.unwrap = attr
 	}
 
 	return result, err
 }
 
-func (p *Parser) parseArray(parent *Object) (Object, error) {
-	obj := Object{
+func (p *Parser) parseArray(parent Object) (Object, error) {
+	obj := ObjectArray{}
+	obj.ObjectBase = ObjectBase{
 		parent:   parent,
 		filename: p.filename,
 		offset:   p.dec.InputOffset(),
 	}
-	var result []Object
 	for p.dec.More() {
 		value, err := p.parseValue(parent)
 		if err != nil {
-			return Object{}, err
+			return nil, err
 		}
-		result = append(result, value)
+		obj.values = append(obj.values, value)
 	}
 	_, err := p.dec.Token() // Consume ']'
-	obj.value = result
 	return obj, err
 }
 
-func parseFile(obj Object, filename string, parent *Object) (Object, error) {
-	file, err := os.Open(filename)
+func parseFile(filename ObjectString, parent Object) (Object, error) {
+	file, err := os.Open(filename.value)
 	if err != nil {
-		return Object{}, fmt.Errorf("%s: failed to open file %s: %w", obj.position(), filename, err)
+		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.value, err)
 	}
 	defer file.Close()
-	abs, _ := filepath.Abs(filename)
-	parser := Parser{dec: json.NewDecoder(file), cwd: path.Dir(abs), filename: filename}
+	abs, _ := filepath.Abs(filename.value)
+	parser := Parser{dec: json.NewDecoder(file), cwd: path.Dir(abs), filename: filename.value}
 	return parser.parseValue(parent)
 }
