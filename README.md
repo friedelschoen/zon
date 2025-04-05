@@ -1,99 +1,212 @@
-# bake
+# bake - A minimal JSON-based declarative build system
 
-`bake` is a minimal, declarative build tool inspired by the Nix language and functional build systems. It evaluates JSON expressions with `@define`, `@include`, `@expand`, and `@output` constructs, performs dependency resolution, and executes builds in isolated output directories using content-based hashing.
+**Bake** is a lightweight, reproducible, and parallel build executor. It builds artifacts based on declarative JSON files and content-addressed caching. Bake is designed to be simple and fast.
+
+---
 
 ## Features
 
-- Declarative JSON-based build descriptions
-- Functional, reproducible builds
-- Content-addressed caching
+- Declarative builds using plain JSON
+- Pure and impure build support (content hashing or randomization)
 - Parallel or serial evaluation
-- Dry-run and graph generation support
-- Per-output logging
-- Minimal dependencies, suitable for bootstrapping
+- Content-addressed caching (store by input hash)
+- DOT graph output of dependency relationships
+- Cleanup of orphaned outputs
+- Minimal runtime dependencies (just Go + POSIX shell)
+- Variable resolution, includes, and extensions
+- Inline string interpolation (`{{var}}`)
+- Output selection via result symlink or JSON
+
+---
+
+## Quick Example
+
+```json
+{
+  "@name": "hello",
+  "@output": "echo hello > $out"
+}
+```
+
+Build it:
+
+```sh
+bake hello.json
+```
+
+Result:
+
+- Creates a cached directory like `cache/store/5e2c34...`
+- Prints its path
+- Optionally symlinks it as `result`
+
+---
 
 ## Installation
 
-Requires Go 1.21 or newer.
+Bake requires Go 1.21+.
+
+```sh
+go build -o bake .
+```
+
+Or install globally:
 
 ```sh
 go install github.com/friedelschoen/bake@latest
 ```
 
+---
+
 ## Usage
 
 ```sh
-bake [flags] file.json [key=value ...]
+bake [options] file.json [var=value ...]
 ```
 
-### Example
+### Options
+
+| Flag              | Description                                            |
+| ----------------- | ------------------------------------------------------ |
+| `-cache dir`      | Output directory (default: `cache/store`)              |
+| `-log dir`        | Log directory (default: `cache/log`)                   |
+| `-result name`    | Symlink name (default: `result`)                       |
+| `-no-result`      | Disable result symlink creation                        |
+| `-force`          | Force rebuild even if output exists                    |
+| `-dry`            | Simulate without building                              |
+| `-serial`         | Evaluate objects one-by-one                            |
+| `-interpreter`    | Default shell (default: `sh`)                          |
+| `-no-eval-output` | Skip evaluation of `@output`, return the object itself |
+| `-graph path`     | Output a DOT graph of dependencies                     |
+| `-clean`          | Delete orphaned cached outputs                         |
+| `-json`           | Print final object as formatted JSON                   |
+
+---
+
+## Concepts
+
+### Object Types
+
+Bake supports:
+
+- `ObjectMap` — standard JSON maps with special keys like `@output`, `@define`
+- `ObjectArray` — lists of values, including `@multiline` support
+- `ObjectString` — string values with `@var` and `{{interpolation}}`
+- `ObjectNumber`, `ObjectBoolean` — literal values
+
+---
+
+## Special Keys
+
+| Key            | Purpose                                                              |
+| -------------- | -------------------------------------------------------------------- |
+| `@name`        | Human-readable name used in graphs/logs                              |
+| `@output`      | Shell snippet that builds into `$out`                                |
+| `@interpreter` | Optional override for the default shell interpreter                  |
+| `@impure`      | If true, disables hash-based caching (useful for timestamped builds) |
+| `@define`      | Defines scoped variables for expansion                               |
+| `@include`     | Path to another JSON file to merge in                                |
+| `@expand`      | Extend from a named object in scope                                  |
+| `@`            | If a map contains only `@`, unwrap its value as the object           |
+
+---
+
+## Includes and Extensions
+
+Include files:
+
+```json
+{
+  "@include": "./base.json",
+  "@output": "echo hello > $out"
+}
+```
+
+Extend a defined object:
 
 ```json
 {
   "@define": {
-    "version": "1.0.0"
+    "base": {
+      "@name": "base",
+      "@output": "echo base > $out"
+    }
   },
-  "build": {
-    "@name": "build",
-    "@output": "echo Building version {{version}} > $out/build.txt"
-  }
+  "@expand": "@base"
 }
 ```
 
-Then run:
+---
 
-```sh
-bake example.json
+## Multiline Arrays
+
+For multi-line string values:
+
+```json
+["@multiline", "line 1", "line 2", "line 3"]
 ```
 
-The output is stored in a content-hashed directory under `cache/`, and a symlink named `result` points to it.
+Expands into one `ObjectString` with newline separators.
 
-## Flags
+---
 
-```
-  -cache dir        directory for output cache (default "cache")
-  -dry              dry-run; do not build anything
-  -force            force rebuild even if output exists
-  -graph file.dot   write DOT-formatted dependency graph to file
-  -interpreter sh   interpreter to use for @output scripts (default "sh")
-  -json             print final result as JSON
-  -log dir          directory for log files (default "cache/log")
-  -no-eval-output   do not evaluate @output; treat it as data
-  -no-result        do not create result symlink
-  -result name      name for result symlink (default "result")
-  -serial           evaluate nodes serially instead of in parallel
-```
+## Environment Variables
 
-## Short Guide
-
-A bake file is a JSON expression. It can be a map, list, string, number, or boolean. Special keys are interpreted:
-
-- `@define`: defines variables for reuse
-- `@include`: includes another JSON file
-- `@expand`: merges in another value from the scope
-- `@output`: a script to execute in a temporary directory with `$out` set
-- `$key`: environment variable to pass to the script
-- `@name`: optional name used for diagnostics and graph generation
-
-Example with includes and environment:
+Keys starting with `$` are exposed to the shell environment:
 
 ```json
 {
-  "@include": "./common.json",
-  "build": {
-    "@name": "example",
-    "@output": "cp $src $out/hello",
-    "$src": "./hello.txt"
-  }
+  "$version": "1.2.3",
+  "@output": "echo $version > $out/version"
 }
 ```
 
-## References
+---
 
-- [Nix: Functional package manager](https://nixos.org/)
-- [dot(1): Graphviz DOT tool](https://graphviz.org/doc/info/lang.html)
-- [Go](https://go.dev/)
+## Output Caching
+
+- Deterministic builds are hashed using FNV64
+- Cached outputs are stored in `cache/store/<hash>/`
+- Logs are stored as `cache/log/<hash>.log`
+- Impure builds skip hashing
+
+---
+
+## Cleanup
+
+```sh
+bake -clean file.json
+```
+
+Removes all output directories in the cache that were **not part of this build run**. Safe for CI and long-term caching.
+
+---
+
+## DOT Graph Output
+
+Generate a visual graph of build dependencies:
+
+```sh
+bake -graph graph.dot file.json
+dot -Tpng graph.dot -o graph.png
+```
+
+---
+
+## Example: Full Build Recipe
+
+```json
+{
+  "@name": "build-myapp",
+  "@define": {
+    "src": "./src"
+  },
+  "@output": "cp -r {{src}} $out"
+}
+```
+
+---
 
 ## License
 
-This software is distributed under the terms of the zlib license. See [LICENSE](./LICENSE) for details.
+Zlib Licensed
