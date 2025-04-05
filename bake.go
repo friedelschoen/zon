@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
+	"slices"
 	"strings"
 )
 
@@ -30,11 +32,12 @@ func main() {
 		noResult   bool
 		dotName    string
 		jsonOutput bool
+		cleanup    bool
 	)
 
 	flag.BoolVar(&ev.Force, "force", false, "force building all outputs")
 	flag.BoolVar(&ev.DryRun, "dry", false, "do not build anything")
-	flag.StringVar(&ev.CacheDir, "cache", "cache", "`destination` of outputs")
+	flag.StringVar(&ev.CacheDir, "cache", "cache/store", "`destination` of outputs")
 	flag.StringVar(&ev.LogDir, "log", "cache/log", "`destination` of logs of outputs")
 	flag.StringVar(&resultName, "result", "result", "`name` of result-symlink")
 	flag.BoolVar(&noResult, "no-result", false, "disables creation of result-symlink")
@@ -43,6 +46,7 @@ func main() {
 	flag.StringVar(&ev.Interpreter, "interpreter", "sh", "default interpreter for @output")
 	flag.BoolVar(&ev.NoEvalOutput, "no-eval-output", false, "print @output in result")
 	flag.BoolVar(&jsonOutput, "json", false, "print result as JSON")
+	flag.BoolVar(&cleanup, "clean", false, "clean orphaned results")
 	flag.Parse()
 
 	if noResult {
@@ -84,6 +88,21 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
+	}
+
+	if cleanup {
+		cwd, _ := os.Getwd()
+		entries, err := os.ReadDir(path.Join(cwd, ev.CacheDir))
+		if err != nil {
+			fmt.Println(err)
+			entries = nil
+		}
+		for _, entry := range entries {
+			if !slices.Contains(ev.Outputs, entry.Name()) {
+				fmt.Printf("clean %s\n", entry.Name())
+				os.RemoveAll(path.Join(cwd, ev.CacheDir, entry.Name()))
+			}
+		}
 	}
 
 	if dotName != "" {

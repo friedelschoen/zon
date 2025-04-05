@@ -24,7 +24,8 @@ type Evaluator struct {
 	Interpreter  string
 	NoEvalOutput bool
 
-	Edges []Edge
+	Edges   []Edge
+	Outputs []string
 }
 
 func (ev *Evaluator) output(result ObjectMap) (Object, error) {
@@ -62,6 +63,8 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	if len(names) >= 2 {
 		ev.Edges = append(ev.Edges, [2]string{names[1], names[0]})
 	}
+
+	ev.Outputs = append(ev.Outputs, hashstr)
 
 	cwd, _ := os.Getwd()
 	outdir := path.Join(cwd, ev.CacheDir, hashstr)
