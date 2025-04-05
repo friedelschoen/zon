@@ -45,6 +45,10 @@ func main() {
 	flag.BoolVar(&jsonOutput, "json", false, "print result as JSON")
 	flag.Parse()
 
+	if noResult {
+		resultName = ""
+	}
+
 	if ev.DryRun && ev.Force {
 		ev.Force = false
 	}
@@ -87,11 +91,11 @@ func main() {
 	}
 
 	if jsonOutput {
-		json.NewEncoder(os.Stdout).Encode(res)
-	} else {
-		if noResult {
-			resultName = ""
-		}
-		res.symlink(resultName)
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "\t")
+		enc.Encode(res.jsonObject())
+	} else if err := res.symlink(resultName); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }

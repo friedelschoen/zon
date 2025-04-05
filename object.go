@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -55,7 +54,7 @@ type ObjectBoolean struct {
 }
 
 type Object interface {
-	json.Marshaler
+	jsonObject() any
 	Parent() Object
 	encodeEnviron(root bool) (string, error)
 	hashValue(w io.Writer)
@@ -116,25 +115,53 @@ func (o ObjectBase) symlink(string) error {
 	return fmt.Errorf("%s: unable to symlink object of type: %T", o.position(), o)
 }
 
-func (o ObjectMap) MarshalJSON() ([]byte, error) {
-	/* TODO: implement @include ... */
-	return json.Marshal(o.values)
+func (o ObjectMap) jsonObject() any {
+	result := make(map[string]any)
+	for k, v := range o.values {
+		result[k] = v.jsonObject()
+	}
+	if len(o.defines) > 0 {
+		definesmap := make(map[string]any)
+		for k, v := range o.defines {
+			definesmap[k] = v.jsonObject()
+		}
+		result["@define"] = definesmap
+	}
+	if len(o.includes) > 0 {
+		incllist := make([]any, len(o.includes))
+		for i, v := range o.includes {
+			incllist[i] = v.jsonObject()
+		}
+		result["@include"] = incllist
+	}
+	if len(o.extends) > 0 {
+		explist := make([]any, len(o.extends))
+		for i, v := range o.extends {
+			explist[i] = v.jsonObject()
+		}
+		result["@expand"] = explist
+	}
+	return result
 }
 
-func (o ObjectArray) MarshalJSON() ([]byte, error) {
-	return json.Marshal(o.values)
+func (o ObjectArray) jsonObject() any {
+	result := make([]any, len(o.values))
+	for i, v := range o.values {
+		result[i] = v.jsonObject()
+	}
+	return result
 }
 
-func (o ObjectString) MarshalJSON() ([]byte, error) {
-	return json.Marshal(o.value)
+func (o ObjectString) jsonObject() any {
+	return o.value
 }
 
-func (o ObjectNumber) MarshalJSON() ([]byte, error) {
-	return json.Marshal(o.value)
+func (o ObjectNumber) jsonObject() any {
+	return o.value
 }
 
-func (o ObjectBoolean) MarshalJSON() ([]byte, error) {
-	return json.Marshal(o.value)
+func (o ObjectBoolean) jsonObject() any {
+	return o.value
 }
 
 func copyMapKeep[K comparable, V Object](dest map[K]V, source map[K]V) {
@@ -416,7 +443,7 @@ func (obj ObjectBoolean) encodeEnviron(root bool) (string, error) {
 func (o ObjectString) symlink(resname string) error {
 	fmt.Printf("%s\n", o.value)
 	if resname != "" {
-		if stat, err := os.Stat(resname); err == nil && (stat.Mode()&os.ModeSymlink) == 0 {
+		if stat, err := os.Lstat(resname); err == nil && (stat.Mode()&os.ModeType) != os.ModeSymlink {
 			return fmt.Errorf("unable to make symlink: exist\n")
 		}
 		os.Remove(resname)
