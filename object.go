@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"maps"
 	"os"
 	"path"
@@ -173,6 +174,40 @@ func copyMapKeep[K comparable, V Object](dest map[K]V, source map[K]V) {
 	}
 }
 
+func parallelResolve[K any](values iter.Seq2[K, Object], set func(K, Object), scope map[string]Object, ev *Evaluator) error {
+	if !ev.Serial {
+		var (
+			wg   sync.WaitGroup
+			mu   sync.Mutex
+			errs []error
+		)
+		for k, v := range values {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				val, err := v.resolve(scope, ev)
+				mu.Lock()
+				set(k, val)
+				errs = append(errs, err)
+				mu.Unlock()
+			}()
+		}
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			return err
+		}
+	} else {
+		for k, v := range values {
+			val, err := v.resolve(scope, ev)
+			if err != nil {
+				return err
+			}
+			set(k, val)
+		}
+	}
+	return nil
+}
+
 func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
 	scope = maps.Clone(scope)
 	maps.Copy(scope, o.defines)
@@ -213,36 +248,8 @@ func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, erro
 		copyMapKeep(o.values, otherast.values)
 	}
 
-	if !ev.Serial {
-		var (
-			wg   sync.WaitGroup
-			mu   sync.Mutex
-			errs []error
-		)
-		for k, v := range o.values {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				val, err := v.resolve(scope, ev)
-				mu.Lock()
-				o.values[k] = val
-				errs = append(errs, err)
-				mu.Unlock()
-			}()
-		}
-		wg.Wait()
-		if err := errors.Join(errs...); err != nil {
-			return nil, err
-		}
-	} else {
-		var err error
-		for k, v := range o.values {
-			o.values[k], err = v.resolve(scope, ev)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+	parallelResolve(maps.All(o.values), func(k string, v Object) { o.values[k] = v }, scope, ev)
+
 	if _, ok := o.values["@output"]; ok && !ev.NoEvalOutput {
 		return ev.output(o)
 	}
@@ -253,36 +260,8 @@ func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, erro
 }
 
 func (o ObjectArray) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	if !ev.Serial {
-		var (
-			wg   sync.WaitGroup
-			mu   sync.Mutex
-			errs []error
-		)
-		for i, elem := range o.values {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				val, err := elem.resolve(scope, ev)
-				mu.Lock()
-				o.values[i] = val
-				errs = append(errs, err)
-				mu.Unlock()
-			}()
-		}
-		wg.Wait()
-		if err := errors.Join(errs...); err != nil {
-			return nil, err
-		}
-	} else {
-		var err error
-		for i, elem := range o.values {
-			o.values[i], err = elem.resolve(scope, ev)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+	parallelResolve(slices.All(o.values), func(k int, v Object) { o.values[k] = v }, scope, ev)
+
 	if len(o.values) > 0 {
 		if head, ok := o.values[0].(ObjectString); ok && head.value == "@multiline" {
 			var builder strings.Builder
