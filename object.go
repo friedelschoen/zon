@@ -39,7 +39,7 @@ type ObjectArray struct {
 type ObjectString struct {
 	ObjectBase
 
-	value string
+	content string
 }
 
 type ObjectNumber struct {
@@ -66,6 +66,10 @@ type Object interface {
 
 func (o ObjectBase) Parent() Object {
 	return o.parent
+}
+
+func (o ObjectBase) String() string {
+	return o.position()
 }
 
 func (o ObjectBase) position() string {
@@ -154,7 +158,7 @@ func (o ObjectArray) jsonObject() any {
 }
 
 func (o ObjectString) jsonObject() any {
-	return o.value
+	return o.content
 }
 
 func (o ObjectNumber) jsonObject() any {
@@ -175,37 +179,36 @@ func copyMapKeep[K comparable, V Object](dest map[K]V, source map[K]V) {
 }
 
 func parallelResolve[K any](values iter.Seq2[K, Object], set func(K, Object), scope map[string]Object, ev *Evaluator) error {
+	var errs []error
 	if !ev.Serial {
 		var (
-			wg   sync.WaitGroup
-			mu   sync.Mutex
-			errs []error
+			wg sync.WaitGroup
+			mu sync.Mutex
 		)
 		for k, v := range values {
 			wg.Add(1)
 			go func() {
-				defer wg.Done()
 				val, err := v.resolve(scope, ev)
 				mu.Lock()
-				set(k, val)
+				if err == nil {
+					set(k, val)
+				}
 				errs = append(errs, err)
 				mu.Unlock()
+				wg.Done()
 			}()
 		}
 		wg.Wait()
-		if err := errors.Join(errs...); err != nil {
-			return err
-		}
 	} else {
 		for k, v := range values {
 			val, err := v.resolve(scope, ev)
-			if err != nil {
-				return err
+			if err == nil {
+				set(k, val)
 			}
-			set(k, val)
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
@@ -228,9 +231,9 @@ func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, erro
 		} else if len(o.extends) > 0 {
 			extname := o.extends[0]
 			o.extends = o.extends[1:]
-			otherastAny, ok := scope[extname.value]
+			otherastAny, ok := scope[extname.content]
 			if !ok {
-				return nil, fmt.Errorf("%s: not in scope: %s", extname.position(), extname.value)
+				return nil, fmt.Errorf("%s: not in scope: %s", extname.position(), extname.content)
 			}
 			otherast, ok = otherastAny.(ObjectMap)
 			if !ok {
@@ -248,10 +251,17 @@ func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, erro
 		copyMapKeep(o.values, otherast.values)
 	}
 
-	parallelResolve(maps.All(o.values), func(k string, v Object) { o.values[k] = v }, scope, ev)
+	err := parallelResolve(maps.All(o.values), func(k string, v Object) { o.values[k] = v }, scope, ev)
+	if err != nil {
+		return nil, err
+	}
 
-	if _, ok := o.values["@output"]; ok && !ev.NoEvalOutput {
-		return ev.output(o)
+	if !ev.NoEvalOutput {
+		_, hasoutput := o.values["@output"]
+		_, hasbuilder := o.values["@builder"]
+		if hasoutput || hasbuilder {
+			return ev.output(o)
+		}
 	}
 	if o.unwrap != nil {
 		return o.unwrap, nil
@@ -260,10 +270,13 @@ func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, erro
 }
 
 func (o ObjectArray) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	parallelResolve(slices.All(o.values), func(k int, v Object) { o.values[k] = v }, scope, ev)
+	err := parallelResolve(slices.All(o.values), func(i int, v Object) { o.values[i] = v }, scope, ev)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(o.values) > 0 {
-		if head, ok := o.values[0].(ObjectString); ok && head.value == "@multiline" {
+		if head, ok := o.values[0].(ObjectString); ok && head.content == "@multiline" {
 			var builder strings.Builder
 			for i, elem := range o.values[1:] {
 				selem, ok := elem.(ObjectString)
@@ -273,7 +286,7 @@ func (o ObjectArray) resolve(scope map[string]Object, ev *Evaluator) (Object, er
 				if i > 0 {
 					builder.WriteByte('\n')
 				}
-				builder.WriteString(selem.value)
+				builder.WriteString(selem.content)
 			}
 			return ObjectString{o.ObjectBase, builder.String()}, nil
 		}
@@ -282,7 +295,7 @@ func (o ObjectArray) resolve(scope map[string]Object, ev *Evaluator) (Object, er
 }
 
 func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	str := obj.value
+	str := obj.content
 	if str == "" {
 		return obj, nil
 	}
@@ -315,11 +328,11 @@ func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object,
 		if !valid {
 			return nil, fmt.Errorf("%s: variable %s must be a string, got %T", obj.position(), varName, replacement)
 		}
-		builder.WriteString(replacementStr.value)
+		builder.WriteString(replacementStr.content)
 		str = str[endIdx+2:]
 	}
 	builder.WriteString(str)
-	obj.value = builder.String()
+	obj.content = builder.String()
 	return obj, nil
 }
 
@@ -336,22 +349,20 @@ func (obj ObjectMap) hashValue(w io.Writer) {
 	keys := slices.Collect(maps.Keys(obj.values))
 	slices.Sort(keys)
 	for _, k := range keys {
-		w.Write([]byte(k))
 		obj.values[k].hashValue(w)
 	}
 }
 
 func (obj ObjectArray) hashValue(w io.Writer) {
 	fmt.Fprint(w, "list")
-	for i, elem := range obj.values {
-		fmt.Fprint(w, i)
+	for _, elem := range obj.values {
 		elem.hashValue(w)
 	}
 }
 
 func (obj ObjectString) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj.value)
-	fmt.Fprint(w, obj.value)
+	fmt.Fprintf(w, "%T", obj.content)
+	fmt.Fprint(w, obj.content)
 }
 
 func (obj ObjectNumber) hashValue(w io.Writer) {
@@ -405,7 +416,7 @@ func (obj ObjectArray) encodeEnviron(root bool) (string, error) {
 }
 
 func (obj ObjectString) encodeEnviron(root bool) (string, error) {
-	return obj.value, nil
+	return obj.content, nil
 }
 
 func (obj ObjectNumber) encodeEnviron(root bool) (string, error) {
@@ -420,13 +431,13 @@ func (obj ObjectBoolean) encodeEnviron(root bool) (string, error) {
 }
 
 func (o ObjectString) symlink(resname string) error {
-	fmt.Printf("%s\n", o.value)
+	fmt.Printf("%s\n", o.content)
 	if resname != "" {
 		if stat, err := os.Lstat(resname); err == nil && (stat.Mode()&os.ModeType) != os.ModeSymlink {
 			return fmt.Errorf("unable to make symlink: exist\n")
 		}
 		os.Remove(resname)
-		return os.Symlink(o.value, resname)
+		return os.Symlink(o.content, resname)
 	}
 	return nil
 }

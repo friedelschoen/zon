@@ -37,8 +37,6 @@ func (p *Parser) parseValue(parent Object) (Object, error) {
 			return p.parseMap(parent)
 		case '[':
 			return p.parseArray(parent)
-		default:
-			return nil, nil
 		}
 	case string:
 		if strings.HasPrefix(tok, "./") {
@@ -63,7 +61,7 @@ func (p *Parser) parseValue(parent Object) (Object, error) {
 }
 
 func (p *Parser) parseMap(parent Object) (Object, error) {
-	result := ObjectMap{
+	obj := ObjectMap{
 		ObjectBase: p.base(parent),
 		defines:    make(map[string]Object),
 		values:     make(map[string]Object),
@@ -76,9 +74,9 @@ func (p *Parser) parseMap(parent Object) (Object, error) {
 		}
 		keyStr, ok := key.(string)
 		if !ok {
-			return nil, fmt.Errorf("%s: expected string-key, got %T", result.position(), key)
+			return nil, fmt.Errorf("%s: expected string-key, got %T", obj.position(), key)
 		}
-		value, err := p.parseValue(result)
+		value, err := p.parseValue(obj)
 		if err != nil {
 			return nil, err
 		}
@@ -88,33 +86,33 @@ func (p *Parser) parseMap(parent Object) (Object, error) {
 			if !ok {
 				return nil, fmt.Errorf("%s: @define must be a map, got %T", value.position(), value)
 			}
-			maps.Copy(result.defines, defs.values)
+			maps.Copy(obj.defines, defs.values)
 		case "@expand":
 			str, ok := value.(ObjectString)
 			if !ok {
 				return nil, fmt.Errorf("%s: @expand variable must be string, got %T", value.position(), value)
 			}
-			result.extends = append(result.extends, str)
+			obj.extends = append(obj.extends, str)
 		case "@include":
 			str, ok := value.(ObjectString)
 			if !ok {
 				return nil, fmt.Errorf("%s: @include must be a string, got %T", value.position(), value)
 			}
-			result.includes = append(result.includes, str)
+			obj.includes = append(obj.includes, str)
 		default:
-			result.values[keyStr] = value
+			obj.values[keyStr] = value
 		}
 	}
 	_, err := p.dec.Token() // Consume '}'
 
-	if attr, ok := result.values["@"]; ok {
-		if len(result.values) != 1 {
-			return nil, fmt.Errorf("%s: map with @ has more than 1 value", result.values["@"].position())
+	if attr, ok := obj.values["@"]; ok {
+		if len(obj.values) != 1 {
+			return nil, fmt.Errorf("%s: map with @ has more than 1 value", obj.values["@"].position())
 		}
-		result.unwrap = attr
+		obj.unwrap = attr
 	}
 
-	return result, err
+	return obj, err
 }
 
 func (p *Parser) parseArray(parent Object) (Object, error) {
@@ -122,7 +120,7 @@ func (p *Parser) parseArray(parent Object) (Object, error) {
 		ObjectBase: p.base(parent),
 	}
 	for p.dec.More() {
-		value, err := p.parseValue(parent)
+		value, err := p.parseValue(obj)
 		if err != nil {
 			return nil, err
 		}
@@ -133,12 +131,12 @@ func (p *Parser) parseArray(parent Object) (Object, error) {
 }
 
 func parseFile(filename ObjectString, parent Object) (Object, error) {
-	file, err := os.Open(filename.value)
+	file, err := os.Open(filename.content)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.value, err)
+		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.content, err)
 	}
 	defer file.Close()
-	abs, _ := filepath.Abs(filename.value)
-	parser := Parser{dec: json.NewDecoder(file), cwd: path.Dir(abs), filename: filename.value}
+	abs, _ := filepath.Abs(filename.content)
+	parser := Parser{dec: json.NewDecoder(file), cwd: path.Dir(abs), filename: filename.content}
 	return parser.parseValue(parent)
 }
