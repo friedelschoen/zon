@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,18 @@ type ObjectBase struct {
 	parent   Object
 	filename string
 	offset   int64
+}
+
+func GetScope[T Object](scope map[string]Object, name ObjectString) (result T, err error) {
+	otherastAny, ok := scope[name.content]
+	if !ok {
+		return result, fmt.Errorf("%s: not in scope: %s", name.position(), name.content)
+	}
+	result, ok = otherastAny.(T)
+	if !ok {
+		return result, fmt.Errorf("%s: %s must be a %T, got %T", otherastAny.position(), name.content, result, otherastAny)
+	}
+	return result, nil
 }
 
 type ObjectMap struct {
@@ -231,13 +244,10 @@ func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, erro
 		} else if len(o.extends) > 0 {
 			extname := o.extends[0]
 			o.extends = o.extends[1:]
-			otherastAny, ok := scope[extname.content]
-			if !ok {
-				return nil, fmt.Errorf("%s: not in scope: %s", extname.position(), extname.content)
-			}
-			otherast, ok = otherastAny.(ObjectMap)
-			if !ok {
-				return nil, fmt.Errorf("%s: unable to expand non-map", extname.position())
+			var err error
+			otherast, err = GetScope[ObjectMap](scope, extname)
+			if err != nil {
+				return nil, err
 			}
 		}
 		copyMapKeep(o.defines, otherast.defines)
@@ -300,10 +310,23 @@ func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object,
 		return obj, nil
 	}
 	if str[0] == '@' && str != "@multiline" {
-		varName := str[1:]
-		replacement, found := scope[varName]
-		if !found {
-			return nil, fmt.Errorf("%s: undefined variable: %s", obj.position(), varName)
+		doEncode := false
+		str = str[1:]
+		if str[0] == '#' {
+			doEncode = true
+			str = str[1:]
+		}
+		varName := str
+		replacement, err := GetScope[Object](scope, ObjectString{obj.ObjectBase, varName})
+		if err != nil {
+			return nil, err
+		}
+		if doEncode {
+			enc, err := json.Marshal(replacement.jsonObject())
+			if err != nil {
+				return nil, err
+			}
+			return ObjectString{content: string(enc)}, nil
 		}
 		return replacement.resolve(scope, ev)
 	}
@@ -320,14 +343,32 @@ func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object,
 			return nil, fmt.Errorf("%s: unmatched {{ in string: %s", obj.position(), str)
 		}
 		varName := str[2:endIdx]
-		replacement, found := scope[varName]
-		if !found {
-			return nil, fmt.Errorf("%s: undefined variable: %s", obj.position(), varName)
+		doEncode := false
+		if varName[0] == '#' {
+			doEncode = true
+			varName = varName[1:]
 		}
-		replacementStr, valid := replacement.(ObjectString)
-		if !valid {
-			return nil, fmt.Errorf("%s: variable %s must be a string, got %T", obj.position(), varName, replacement)
+
+		var replacementStr ObjectString
+
+		if doEncode {
+			replacement, err := GetScope[Object](scope, ObjectString{obj.ObjectBase, varName})
+			if err != nil {
+				return nil, err
+			}
+			enc, err := json.Marshal(replacement.jsonObject())
+			if err != nil {
+				return nil, err
+			}
+			replacementStr = ObjectString{content: string(enc)}
+		} else {
+			var err error
+			replacementStr, err = GetScope[ObjectString](scope, ObjectString{obj.ObjectBase, varName})
+			if err != nil {
+				return nil, err
+			}
 		}
+
 		builder.WriteString(replacementStr.content)
 		str = str[endIdx+2:]
 	}
