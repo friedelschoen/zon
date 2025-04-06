@@ -53,8 +53,8 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	for node := Object(result); node != nil; node = node.Parent() {
 		if mapv, ok := node.(ObjectMap); ok {
 			if nameAny, ok := mapv.values["@name"]; ok {
-				if name, ok := nameAny.(ObjectString); ok && (len(names) == 0 || names[len(names)-1] != name.value) {
-					names = append(names, name.value)
+				if name, ok := nameAny.(ObjectString); ok && (len(names) == 0 || names[len(names)-1] != name.content) {
+					names = append(names, name.content)
 				}
 			}
 		}
@@ -69,7 +69,7 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	cwd, _ := os.Getwd()
 	outdir := path.Join(cwd, ev.CacheDir, hashstr)
 	if _, err := os.Stat(outdir); (ev.DryRun || err == nil) && !ev.Force {
-		return ObjectString{value: outdir}, nil
+		return ObjectString{content: outdir}, nil
 	}
 
 	start := time.Now()
@@ -82,17 +82,45 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 		}
 	}()
 
-	install, ok := result.values["@output"].(ObjectString)
-	if !ok {
-		return nil, fmt.Errorf("%s: @output must be a string", result.values["@output"].position())
+	var cmdline []string
+	var token Object
+
+	if installAny, ok := result.values["@output"]; ok {
+		token = installAny
+		install, ok := installAny.(ObjectString)
+		if !ok {
+			return nil, fmt.Errorf("%s: @output must be a string", installAny.position())
+		}
+
+		interpreter := ev.Interpreter
+		if interpreterAny, ok := result.values["@interpreter"]; ok {
+			if str, ok := interpreterAny.(ObjectString); ok {
+				interpreter = str.content
+			} else {
+				return nil, fmt.Errorf("%s: @interpreter must be a string", interpreterAny.position())
+			}
+		}
+		cmdline = []string{interpreter, "-e", "-c", install.content, "builder"}
+	} else if builderAny, ok := result.values["@builder"]; ok {
+		token = builderAny
+		builder, ok := builderAny.(ObjectString)
+		if !ok {
+			return nil, fmt.Errorf("%s: @builder must be a string", builderAny.position())
+		}
+		cmdline = []string{builder.content}
 	}
 
-	interpreter := ev.Interpreter
-	if interpreterAny, ok := result.values["@interpreter"]; ok {
-		if str, ok := interpreterAny.(ObjectString); ok {
-			interpreter = str.value
-		} else {
-			return nil, fmt.Errorf("%s: @interpreter must be a string", interpreterAny.position())
+	if argsAny, ok := result.values["@args"]; ok {
+		args, ok := argsAny.(ObjectArray)
+		if !ok {
+			return nil, fmt.Errorf("%s: @args must be an array", argsAny.position())
+		}
+		for _, elem := range args.values[1:] {
+			arg, ok := elem.(ObjectString)
+			if !ok {
+				return nil, fmt.Errorf("%s: non-string in @args: %T", elem.position(), elem)
+			}
+			cmdline = append(cmdline, string(arg.content))
 		}
 	}
 
@@ -119,14 +147,14 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	logbuf := &RingBuffer{Content: make([]byte, 1024)}
 	stdout := io.MultiWriter(logfile, logbuf)
 
-	cmd := exec.Command(interpreter, "-e", "-c", install.value)
+	cmd := exec.Command(cmdline[0], cmdline[1:]...)
 	cmd.Env = environ
 	cmd.Dir = builddir
 	cmd.Stdin = nil
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s: %w", install.position(), err)
+		return nil, fmt.Errorf("%s: %w", token.position(), err)
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
@@ -137,5 +165,5 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	}
 
 	success = true
-	return ObjectString{value: outdir}, nil
+	return ObjectString{content: outdir}, nil
 }
