@@ -103,12 +103,12 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	defer os.RemoveAll(builddir)
 	environ := append(os.Environ(), "out="+outdir)
 	for key, value := range result.values {
-		if key != "" && key[0] == '$' {
+		if key != "" && key[0] != '@' {
 			enc, err := value.encodeEnviron(true)
 			if err != nil {
 				return nil, err
 			}
-			environ = append(environ, key[1:]+"="+enc)
+			environ = append(environ, key+"="+enc)
 		}
 	}
 
@@ -126,7 +126,7 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s: %w\n", install.position(), err)
+		return nil, fmt.Errorf("%s: %w", install.position(), err)
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
