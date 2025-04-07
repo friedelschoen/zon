@@ -36,7 +36,7 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	}
 
 	var hashsum []byte
-	hashlib := fnv.New64()
+	hashlib := fnv.New128()
 	if impure {
 		hashsum = make([]byte, hashlib.Size())
 		for i := range hashsum {
@@ -46,7 +46,7 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 		result.hashValue(hashlib)
 		hashsum = hashlib.Sum(nil)
 	}
-	hashstr := hex.EncodeToString(hashsum[:])
+	hashstr := hex.EncodeToString(hashsum)
 
 	var names []string
 	for node := Object(result); node != nil; node = node.Parent() {
