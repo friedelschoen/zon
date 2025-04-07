@@ -124,11 +124,30 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 		}
 	}
 
-	builddir, err := os.MkdirTemp("", "bake-")
-	if err != nil {
-		return nil, err
+	var builddir string
+	var deletebuilddir bool
+
+	if sourcedirAny, ok := result.values["@source"]; ok {
+		sourcedir, ok := sourcedirAny.(ObjectString)
+		if !ok {
+			return nil, fmt.Errorf("%s: @source must be a string", sourcedirAny.position())
+		}
+		builddir = sourcedir.content
+	} else {
+		var err error
+		builddir, err = os.MkdirTemp("", "bake-")
+		if err != nil {
+			return nil, err
+		}
+		deletebuilddir = true
 	}
-	defer os.RemoveAll(builddir)
+
+	defer func() {
+		if deletebuilddir {
+			os.RemoveAll(builddir)
+		}
+	}()
+
 	environ := append(os.Environ(), "out="+outdir)
 	for key, value := range result.values {
 		if key != "" && key[0] != '@' {
@@ -154,7 +173,7 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s: error while building, output in %s: %w", token.position(), path.Join(ev.LogDir, hashstr+".log"), err)
+		return nil, fmt.Errorf("%s: %w", token.position(), err)
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
