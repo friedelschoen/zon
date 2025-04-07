@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -159,21 +158,21 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 		}
 	}
 
-	logfile, err := os.Create(path.Join(ev.LogDir, hashstr+".log"))
+	logpath := path.Join(ev.LogDir, hashstr+".log")
+	logfile, err := os.Create(logpath)
 	if err != nil {
 		logfile = os.Stdout
 	}
-	logbuf := &RingBuffer{Content: make([]byte, 1024)}
-	stdout := io.MultiWriter(logfile, logbuf)
+	defer logfile.Close()
 
 	cmd := exec.Command(cmdline[0], cmdline[1:]...)
 	cmd.Env = environ
 	cmd.Dir = builddir
 	cmd.Stdin = nil
-	cmd.Stdout = stdout
-	cmd.Stderr = stdout
+	cmd.Stdout = logfile
+	cmd.Stderr = logfile
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s: %w", token.position(), err)
+		return nil, fmt.Errorf("%s: building %s failed, for logs look in %s: %w", token.position(), hashstr, logpath, err)
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
