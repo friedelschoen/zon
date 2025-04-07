@@ -2,12 +2,13 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path"
 	"slices"
 	"strings"
+
+	flag "github.com/spf13/pflag"
 )
 
 func writeDot(filename string, edges []Edge) {
@@ -18,7 +19,7 @@ func writeDot(filename string, edges []Edge) {
 	}
 	defer dot.Close()
 
-	fmt.Fprintf(dot, "digraph D {\n")
+	fmt.Fprintf(dot, "digraph {\n")
 	for _, e := range edges {
 		fmt.Fprintf(dot, "\"%s\" -> \"%s\";\n", e[0], e[1])
 	}
@@ -35,19 +36,23 @@ func main() {
 		cleanup    bool
 	)
 
-	flag.BoolVar(&ev.Force, "force", false, "force building all outputs")
-	flag.BoolVar(&ev.DryRun, "dry", false, "do not build anything")
-	flag.StringVar(&ev.CacheDir, "cache", "cache/store", "`destination` of outputs")
-	flag.StringVar(&ev.LogDir, "log", "cache/log", "`destination` of logs of outputs")
-	flag.StringVar(&resultName, "result", "result", "`name` of result-symlink")
+	flag.BoolVarP(&ev.Force, "force", "f", false, "force building all outputs")
+	flag.BoolVarP(&ev.DryRun, "dry", "d", false, "do not build anything")
+	flag.StringVarP(&ev.CacheDir, "cache", "c", "cache/store", "destination of outputs")
+	flag.StringVarP(&ev.LogDir, "log", "l", "cache/log", "destination of logs of outputs")
+	flag.StringVarP(&resultName, "output", "o", "result", "name of result-symlink")
 	flag.BoolVar(&noResult, "no-result", false, "disables creation of result-symlink")
-	flag.StringVar(&dotName, "graph", "", "`destination` of dependency graph (DOT formatted)")
-	flag.BoolVar(&ev.Serial, "serial", false, "do not build output asynchronous")
+	flag.StringVar(&dotName, "graph", "", "destination of dependency graph")
+	flag.BoolVarP(&ev.Serial, "serial", "s", false, "do not build output asynchronous")
 	flag.StringVar(&ev.Interpreter, "interpreter", "sh", "default interpreter for @output")
-	flag.BoolVar(&ev.NoEvalOutput, "no-eval-output", false, "print @output in result")
-	flag.BoolVar(&jsonOutput, "json", false, "print result as JSON")
-	flag.BoolVar(&cleanup, "clean", false, "clean orphaned results")
+	flag.BoolVar(&ev.NoEvalOutput, "no-eval-output", false, "skip evaluation of @output")
+	flag.BoolVar(&jsonOutput, "json", false, "print result as JSON, implies --no-result")
+	flag.BoolVarP(&cleanup, "clean", "g", false, "clean orphaned results, not used by this build")
 	flag.Parse()
+
+	if jsonOutput {
+		noResult = true
+	}
 
 	if noResult {
 		resultName = ""
