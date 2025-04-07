@@ -198,6 +198,7 @@ func parallelResolve[K any](values iter.Seq2[K, Object], set func(K, Object), sc
 			wg sync.WaitGroup
 			mu sync.Mutex
 		)
+		mu.Lock()
 		for k, v := range values {
 			wg.Add(1)
 			go func() {
@@ -211,6 +212,7 @@ func parallelResolve[K any](values iter.Seq2[K, Object], set func(K, Object), sc
 				wg.Done()
 			}()
 		}
+		mu.Unlock()
 		wg.Wait()
 	} else {
 		for k, v := range values {
