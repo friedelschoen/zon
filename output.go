@@ -154,7 +154,7 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s: %w", token.position(), err)
+		return nil, fmt.Errorf("%s: error while building, output in %s: %w", token.position(), path.Join(ev.LogDir, hashstr+".log"), err)
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
