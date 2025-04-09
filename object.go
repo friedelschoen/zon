@@ -477,7 +477,7 @@ func (o ObjectString) symlink(resname string) error {
 	fmt.Printf("%s\n", o.content)
 	if resname != "" {
 		if stat, err := os.Lstat(resname); err == nil && (stat.Mode()&os.ModeType) != os.ModeSymlink {
-			return fmt.Errorf("unable to make symlink: exist\n")
+			return fmt.Errorf("unable to make symlink: exist")
 		}
 		os.Remove(resname)
 		return os.Symlink(o.content, resname)
