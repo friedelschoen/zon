@@ -27,6 +27,23 @@ type Evaluator struct {
 	Outputs []string
 }
 
+func getNames(result Object) (names []string) {
+	for node := result; node != nil; node = node.Parent() {
+		n := "?"
+		if mapv, ok := node.(ObjectMap); ok {
+			if nameAny, ok := mapv.values["@name"]; ok {
+				if name, ok := nameAny.(ObjectString); ok {
+					n = name.content
+				}
+			}
+		}
+		if len(names) == 0 || names[len(names)-1] != n {
+			names = append(names, n)
+		}
+	}
+	return
+}
+
 func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	impure := false
 	if impureAny, ok := result.values["@impure"]; ok {
@@ -48,16 +65,7 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	}
 	hashstr := hex.EncodeToString(hashsum)
 
-	var names []string
-	for node := Object(result); node != nil; node = node.Parent() {
-		if mapv, ok := node.(ObjectMap); ok {
-			if nameAny, ok := mapv.values["@name"]; ok {
-				if name, ok := nameAny.(ObjectString); ok && (len(names) == 0 || names[len(names)-1] != name.content) {
-					names = append(names, name.content)
-				}
-			}
-		}
-	}
+	names := getNames(result)
 
 	if len(names) >= 2 {
 		ev.Edges = append(ev.Edges, [2]string{names[1], names[0]})
