@@ -86,9 +86,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	os.MkdirAll(ev.CacheDir, 0755)
-	os.MkdirAll(ev.LogDir, 0755)
-
+	if !ev.DryRun {
+		os.MkdirAll(ev.CacheDir, 0755)
+		os.MkdirAll(ev.LogDir, 0755)
+	}
 	res, err := ast.resolve(scope, &ev)
 	if err != nil {
 		fmt.Println(err)
