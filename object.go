@@ -18,7 +18,8 @@ import (
 type ObjectBase struct {
 	parent   Object
 	filename string
-	offset   int64
+	line     int
+	offset   int
 }
 
 func GetScope[T Object](scope map[string]Object, name ObjectString) (result T, err error) {
@@ -89,44 +90,8 @@ func (o ObjectBase) position() string {
 	if o.filename == "" {
 		return "<unknown>"
 	}
-	file, err := os.Open(o.filename)
-	if err != nil {
-		return fmt.Sprintf("%s:1:%d", o.filename, o.offset)
-	}
-	defer file.Close()
 
-	var (
-		line       = 1
-		lineOffset = int64(0)
-		buf        = make([]byte, 4096)
-		total      = int64(0)
-	)
-
-	for {
-		n, err := file.Read(buf)
-		if n == 0 && err != nil {
-			break
-		}
-		for i := range n {
-			if total == o.offset {
-				return fmt.Sprintf("%s:%d:%d", path.Base(o.filename), line, int(o.offset-lineOffset))
-			}
-			if buf[i] == '\n' {
-				line++
-				lineOffset = total + 1
-			}
-			total++
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "<unknown>"
-		}
-	}
-
-	// If offset is beyond EOF, fallback to last known position
-	return fmt.Sprintf("%s:%d:%d", path.Base(o.filename), line, int(o.offset-lineOffset))
+	return fmt.Sprintf("%s:%d:%d", path.Base(o.filename), o.line, o.offset)
 }
 
 func (o ObjectBase) symlink(string) error {
@@ -391,7 +356,7 @@ func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object,
 		}
 
 		builder.WriteString(replacementStr.content)
-		str = str[endIdx+1:]
+		str = str[endIdx+len(InterpEnd):]
 	}
 	builder.WriteString(str)
 	obj.content = builder.String()

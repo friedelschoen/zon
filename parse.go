@@ -1,17 +1,18 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 )
 
 type Parser struct {
-	dec      *json.Decoder
+	s        *Scanner
 	cwd      string
 	filename string
 }
@@ -20,44 +21,118 @@ func (p *Parser) base(parent Object) ObjectBase {
 	return ObjectBase{
 		parent:   parent,
 		filename: p.filename,
-		offset:   p.dec.InputOffset(),
+		offset:   p.s.Start,
+		line:     p.s.Linenr,
 	}
 }
 
-func (p *Parser) parseValue(parent Object) (Object, error) {
-	token, err := p.dec.Token()
+func (p *Parser) expect(toks ...Token) error {
+	if !slices.Contains(toks, p.s.Token) {
+		var expected strings.Builder
+		for i, t := range toks {
+			if i > 0 {
+				expected.WriteString(", ")
+			}
+			expected.WriteString(t.String())
+		}
+		return fmt.Errorf("%s:%d:%d-%d: expected %s, got '%s' (type %v)", path.Base(p.filename), p.s.Linenr, p.s.Start+1, p.s.End+1, expected.String(), p.s.Text(), p.s.Token)
+	}
+	err := p.s.Next()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) parseString(parent Object) (Object, error) {
+	obj := ObjectString{
+		ObjectBase: p.base(parent),
+	}
+
+	var builder strings.Builder
+	for {
+		err := p.s.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		switch p.s.Token {
+		case TokenStringChar:
+			builder.WriteString(p.s.Text())
+		case TokenStringEscape:
+			text := p.s.Text()
+			/* text is including \, so we want the second char */
+			switch text[1] {
+			case '"':
+				builder.WriteByte('"')
+			case '\\':
+				builder.WriteByte('\\')
+			case 'b':
+				builder.WriteByte('\b')
+			case 'f':
+				builder.WriteByte('\f')
+			case 'n':
+				builder.WriteByte('\n')
+			case 'r':
+				builder.WriteByte('\r')
+			case 't':
+				builder.WriteByte('\t')
+			case 'u':
+				code, err := strconv.ParseInt(text[2:6], 16, 16)
+				if err != nil {
+					return nil, err
+				}
+				builder.WriteRune(rune(code))
+			}
+		case TokenStringEnd:
+			goto exit
+		default:
+			err := p.expect(TokenStringChar, TokenStringEnd)
+			return nil, err
+		}
+	}
+exit:
+	err := p.s.Next()
 	if err != nil {
 		return nil, err
 	}
 
-	switch tok := token.(type) {
-	case json.Delim:
-		switch tok {
-		case '{':
-			return p.parseMap(parent)
-		case '[':
-			return p.parseArray(parent)
-		}
-	case string:
-		if strings.HasPrefix(tok, "./") {
-			tok = path.Join(p.cwd, tok)
-		}
-		return ObjectString{
-			p.base(parent),
-			tok,
-		}, nil
-	case float64:
-		return ObjectNumber{
-			p.base(parent),
-			tok,
-		}, nil
-	case bool:
-		return ObjectBoolean{
-			p.base(parent),
-			tok,
-		}, nil
+	obj.content = builder.String()
+	if strings.HasPrefix(obj.content, "./") {
+		obj.content = path.Join(p.cwd, obj.content)
 	}
-	return nil, fmt.Errorf("%s: invalid type %T", p.base(nil).position(), token)
+	return obj, nil
+}
+
+func (p *Parser) parseValue(parent Object) (Object, error) {
+	switch p.s.Token {
+	case TokenLBrace:
+		return p.parseMap(parent)
+	case TokenLBracket:
+		return p.parseArray(parent)
+	case TokenString:
+		return p.parseString(parent)
+	case TokenInteger:
+		val, _ := strconv.ParseFloat(p.s.Text(), 64)
+		obj := ObjectNumber{
+			p.base(parent),
+			val,
+		}
+		if err := p.s.Next(); err != nil {
+			return nil, err
+		}
+		return obj, nil
+	case TokenTrue, TokenFalse:
+		obj := ObjectBoolean{
+			p.base(parent),
+			p.s.Token == TokenTrue,
+		}
+		if err := p.s.Next(); err != nil {
+			return nil, err
+		}
+		return obj, nil
+	}
+	return nil, fmt.Errorf("%s: invalid token: %v", p.base(nil).position(), p.s.Token)
 }
 
 func (p *Parser) parseMap(parent Object) (Object, error) {
@@ -67,20 +142,28 @@ func (p *Parser) parseMap(parent Object) (Object, error) {
 		values:     make(map[string]Object),
 	}
 
-	for p.dec.More() {
-		key, err := p.dec.Token()
+	p.s.Token = TokenComma
+	for p.s.Token == TokenComma {
+		err := p.s.Next()
 		if err != nil {
 			return nil, err
 		}
-		keyStr, ok := key.(string)
+		key, err := p.parseValue(obj)
+		if err != nil {
+			return nil, err
+		}
+		keyStr, ok := key.(ObjectString)
 		if !ok {
 			return nil, fmt.Errorf("%s: expected string-key, got %T", obj.position(), key)
+		}
+		if err := p.expect(TokenColon); err != nil {
+			return nil, err
 		}
 		value, err := p.parseValue(obj)
 		if err != nil {
 			return nil, err
 		}
-		switch keyStr {
+		switch keyStr.content {
 		case "@define":
 			defs, ok := value.(ObjectMap)
 			if !ok {
@@ -100,10 +183,13 @@ func (p *Parser) parseMap(parent Object) (Object, error) {
 			}
 			obj.includes = append(obj.includes, str)
 		default:
-			obj.values[keyStr] = value
+			obj.values[keyStr.content] = value
 		}
 	}
-	_, err := p.dec.Token() // Consume '}'
+
+	if err := p.expect(TokenRBrace); err != nil {
+		return nil, err
+	}
 
 	if attr, ok := obj.values["@"]; ok {
 		if len(obj.values) != 1 {
@@ -112,22 +198,32 @@ func (p *Parser) parseMap(parent Object) (Object, error) {
 		obj.unwrap = attr
 	}
 
-	return obj, err
+	return obj, nil
 }
 
 func (p *Parser) parseArray(parent Object) (Object, error) {
 	obj := ObjectArray{
 		ObjectBase: p.base(parent),
 	}
-	for p.dec.More() {
+
+	p.s.Token = TokenComma
+	for p.s.Token == TokenComma {
+		err := p.s.Next()
+		if err != nil {
+			return nil, err
+		}
 		value, err := p.parseValue(obj)
 		if err != nil {
 			return nil, err
 		}
 		obj.values = append(obj.values, value)
 	}
-	_, err := p.dec.Token() // Consume ']'
-	return obj, err
+
+	if err := p.expect(TokenRBracket); err != nil {
+		return nil, err
+	}
+
+	return obj, nil
 }
 
 func parseFile(filename ObjectString, parent Object) (Object, error) {
@@ -137,6 +233,19 @@ func parseFile(filename ObjectString, parent Object) (Object, error) {
 	}
 	defer file.Close()
 	abs, _ := filepath.Abs(filename.content)
-	parser := Parser{dec: json.NewDecoder(file), cwd: path.Dir(abs), filename: filename.content}
-	return parser.parseValue(parent)
+
+	scanner := NewScanner(file)
+	err = scanner.Next()
+	if err != nil {
+		return nil, err
+	}
+	parser := Parser{s: scanner, cwd: path.Dir(abs), filename: filename.content}
+	val, err := parser.parseValue(parent)
+	if err != nil {
+		return nil, err
+	}
+	if err := parser.expect(TokenEOF); err != nil {
+		return nil, err
+	}
+	return val, nil
 }
