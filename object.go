@@ -306,6 +306,11 @@ func (o ObjectArray) resolve(scope map[string]Object, ev *Evaluator) (Object, er
 	return o, nil
 }
 
+const (
+	InterpBegin = "{{"
+	InterpEnd   = "}}"
+)
+
 func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
 	str := obj.content
 	if str == "" {
@@ -328,23 +333,37 @@ func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object,
 			if err != nil {
 				return nil, err
 			}
-			return ObjectString{content: string(enc)}, nil
+			obj.content = string(enc)
+			return obj, nil
 		}
 		return replacement.resolve(scope, ev)
 	}
+	if !strings.Contains(str, InterpBegin) {
+		/* no interpolation required */
+		return obj, nil
+	}
 	var builder strings.Builder
 	for len(str) > 0 {
-		startIdx := strings.Index(str, "{{")
+		startIdx := strings.Index(str, InterpBegin)
 		if startIdx == -1 {
 			break
 		}
+		if startIdx > 0 && str[startIdx-1] == '\\' {
+			/* escape sequence: write until, not including escaping `\` and `{{`, continue after `{{`  */
+			builder.WriteString(str[:startIdx-1])
+			builder.WriteString(InterpBegin)
+			str = str[startIdx+len(InterpBegin):]
+			continue
+		}
 		builder.WriteString(str[:startIdx])
 		str = str[startIdx:]
-		endIdx := strings.Index(str, "}}")
+		endIdx := strings.Index(str, InterpEnd)
 		if endIdx == -1 {
-			return nil, fmt.Errorf("%s: unmatched {{ in string: %s", obj.position(), str)
+			/* unmatched beginning */
+			builder.WriteString(InterpBegin)
+			str = str[len(InterpBegin):]
 		}
-		varName := str[2:endIdx]
+		varName := str[len(InterpBegin):endIdx]
 		doEncode := false
 		if varName[0] == '#' {
 			doEncode = true
@@ -372,7 +391,7 @@ func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object,
 		}
 
 		builder.WriteString(replacementStr.content)
-		str = str[endIdx+2:]
+		str = str[endIdx+1:]
 	}
 	builder.WriteString(str)
 	obj.content = builder.String()
