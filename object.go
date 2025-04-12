@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,78 +14,32 @@ import (
 	"sync"
 )
 
-type ObjectBase struct {
-	parent   Object
+/* unresolved value */
+type Expression interface {
+	position() string
+	hashValue(w io.Writer)
+	resolve(scope map[string]Value, ev *Evaluator) (Value, error)
+}
+
+/* resolved value */
+type Value interface {
+	position() string
+	encodeEnviron(root bool) (string, error)
+	symlink(resultname string) error
+	jsonObject() any
+}
+
+type BaseExpr struct {
 	filename string
 	line     int
 	offset   int
 }
 
-func GetScope[T Object](scope map[string]Object, name ObjectString) (result T, err error) {
-	otherastAny, ok := scope[name.content]
-	if !ok {
-		return result, fmt.Errorf("%s: not in scope: %s", name.position(), name.content)
-	}
-	result, ok = otherastAny.(T)
-	if !ok {
-		return result, fmt.Errorf("%s: %s must be a %T, got %T", otherastAny.position(), name.content, result, otherastAny)
-	}
-	return result, nil
-}
-
-type ObjectMap struct {
-	ObjectBase
-
-	defines  map[string]Object
-	includes []ObjectString
-	extends  []ObjectString
-	values   map[string]Object
-	unwrap   Object
-}
-
-type ObjectArray struct {
-	ObjectBase
-
-	values []Object
-}
-
-type ObjectString struct {
-	ObjectBase
-
-	content string
-}
-
-type ObjectNumber struct {
-	ObjectBase
-
-	value float64
-}
-
-type ObjectBoolean struct {
-	ObjectBase
-
-	value bool
-}
-
-type Object interface {
-	jsonObject() any
-	Parent() Object
-	encodeEnviron(root bool) (string, error)
-	hashValue(w io.Writer)
-	position() string
-	resolve(scope map[string]Object, ev *Evaluator) (Object, error)
-	symlink(resultname string) error
-}
-
-func (o ObjectBase) Parent() Object {
-	return o.parent
-}
-
-func (o ObjectBase) String() string {
+func (o BaseExpr) String() string {
 	return o.position()
 }
 
-func (o ObjectBase) position() string {
+func (o BaseExpr) position() string {
 	if o.filename == "" {
 		return "<unknown>"
 	}
@@ -94,69 +47,36 @@ func (o ObjectBase) position() string {
 	return fmt.Sprintf("%s:%d:%d", path.Base(o.filename), o.line, o.offset)
 }
 
-func (o ObjectBase) symlink(string) error {
+func (o BaseExpr) symlink(string) error {
 	return fmt.Errorf("%s: unable to symlink object of type: %T", o.position(), o)
 }
 
-func (o ObjectMap) jsonObject() any {
+func (obj BaseExpr) encodeEnviron(bool) (string, error) {
+	return "", fmt.Errorf("%s: unable to encode %T", obj.position(), obj)
+}
+
+type MapExpr struct {
+	BaseExpr
+
+	extends []Expression
+	expr    []Expression
+}
+
+type MapValue struct {
+	BaseExpr
+
+	values map[string]Value
+}
+
+func (o MapValue) jsonObject() any {
 	result := make(map[string]any)
 	for k, v := range o.values {
 		result[k] = v.jsonObject()
 	}
-	if len(o.defines) > 0 {
-		definesmap := make(map[string]any)
-		for k, v := range o.defines {
-			definesmap[k] = v.jsonObject()
-		}
-		result["@define"] = definesmap
-	}
-	if len(o.includes) > 0 {
-		incllist := make([]any, len(o.includes))
-		for i, v := range o.includes {
-			incllist[i] = v.jsonObject()
-		}
-		result["@include"] = incllist
-	}
-	if len(o.extends) > 0 {
-		explist := make([]any, len(o.extends))
-		for i, v := range o.extends {
-			explist[i] = v.jsonObject()
-		}
-		result["@expand"] = explist
-	}
 	return result
 }
 
-func (o ObjectArray) jsonObject() any {
-	result := make([]any, len(o.values))
-	for i, v := range o.values {
-		result[i] = v.jsonObject()
-	}
-	return result
-}
-
-func (o ObjectString) jsonObject() any {
-	return o.content
-}
-
-func (o ObjectNumber) jsonObject() any {
-	return o.value
-}
-
-func (o ObjectBoolean) jsonObject() any {
-	return o.value
-}
-
-func copyMapKeep[K comparable, V Object](dest map[K]V, source map[K]V) {
-	for k, v := range source {
-		_, ok := dest[k]
-		if !ok {
-			dest[k] = v
-		}
-	}
-}
-
-func parallelResolve[K any](values iter.Seq2[K, Object], set func(K, Object), scope map[string]Object, ev *Evaluator) error {
+func parallelResolve[K any](values iter.Seq2[K, Expression], set func(K, Value), scope map[string]Value, ev *Evaluator) error {
 	var errs []error
 	if !ev.Serial {
 		var (
@@ -191,218 +111,50 @@ func parallelResolve[K any](values iter.Seq2[K, Object], set func(K, Object), sc
 	return errors.Join(errs...)
 }
 
-func (o ObjectMap) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	scope = maps.Clone(scope)
-	maps.Copy(scope, o.defines)
-	for len(o.includes) > 0 || len(o.extends) > 0 {
-		var otherast ObjectMap
-		if len(o.includes) > 0 {
-			inclpath := o.includes[0]
-			o.includes = o.includes[1:]
-			otherastAny, err := parseFile(inclpath, o)
-			if err != nil {
-				return nil, err
-			}
-			var ok bool
-			otherast, ok = otherastAny.(ObjectMap)
-			if !ok {
-				return nil, fmt.Errorf("%s: unable to include non-map", inclpath.position())
-			}
-		} else if len(o.extends) > 0 {
-			extname := o.extends[0]
-			o.extends = o.extends[1:]
-			var err error
-			otherast, err = GetScope[ObjectMap](scope, extname)
-			if err != nil {
-				return nil, err
-			}
-		}
-		copyMapKeep(o.defines, otherast.defines)
-		o.includes = append(o.includes, otherast.includes...)
-		o.extends = append(o.extends, otherast.extends...)
-
-		if len(otherast.defines) > 0 {
-			scope = maps.Clone(scope)
-			copyMapKeep(scope, otherast.defines)
-		}
-		copyMapKeep(o.values, otherast.values)
-	}
-
-	err := parallelResolve(maps.All(o.values), func(k string, v Object) { o.values[k] = v }, scope, ev)
+func (o MapExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	values := make([]Value, len(o.expr))
+	err := parallelResolve(slices.All(o.expr), func(k int, v Value) { values[k] = v }, scope, ev)
 	if err != nil {
 		return nil, err
 	}
 
-	if !ev.NoEvalOutput {
-		_, hasoutput := o.values["@output"]
-		_, hasbuilder := o.values["@builder"]
-		if hasoutput || hasbuilder {
-			return ev.output(o)
+	res := MapValue{
+		BaseExpr: o.BaseExpr,
+		values:   make(map[string]Value),
+	}
+
+	for i := 0; i < len(values); i += 2 {
+		key, value := values[i], values[i+1]
+		keyStr, ok := key.(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("%s: expected string-key, got %T", key.position(), key)
 		}
-	}
-	if o.unwrap != nil {
-		return o.unwrap, nil
-	}
-	return o, nil
-}
-
-func (o ObjectArray) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	err := parallelResolve(slices.All(o.values), func(i int, v Object) { o.values[i] = v }, scope, ev)
-	if err != nil {
-		return nil, err
+		res.values[keyStr.content] = value
 	}
 
-	if len(o.values) > 0 {
-		if head, ok := o.values[0].(ObjectString); ok && head.content == "@multiline" {
-			var builder strings.Builder
-			for i, elem := range o.values[1:] {
-				selem, ok := elem.(ObjectString)
-				if !ok {
-					return nil, fmt.Errorf("%s: non-string in @multiline-array: %T", elem.position(), elem)
-				}
-				if i > 0 {
-					builder.WriteByte('\n')
-				}
-				builder.WriteString(selem.content)
-			}
-			return ObjectString{o.ObjectBase, builder.String()}, nil
-		}
-	}
-	return o, nil
-}
-
-const (
-	InterpBegin = "{{"
-	InterpEnd   = "}}"
-)
-
-func (obj ObjectString) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	str := obj.content
-	if str == "" {
-		return obj, nil
-	}
-	if str[0] == '@' && str != "@multiline" {
-		doEncode := false
-		str = str[1:]
-		if str[0] == '#' {
-			doEncode = true
-			str = str[1:]
-		}
-		varName := str
-		replacement, err := GetScope[Object](scope, ObjectString{obj.ObjectBase, varName})
+	for _, extname := range o.extends {
+		othervalue, err := extname.resolve(scope, ev)
 		if err != nil {
 			return nil, err
 		}
-		if doEncode {
-			enc, err := json.Marshal(replacement.jsonObject())
-			if err != nil {
-				return nil, err
-			}
-			obj.content = string(enc)
-			return obj, nil
+		otherast, ok := othervalue.(MapValue)
+		if !ok {
+			return nil, fmt.Errorf("%s: unable to extend %T", o.position(), othervalue)
 		}
-		return replacement.resolve(scope, ev)
+		maps.Copy(res.values, otherast.values)
 	}
-	if !strings.Contains(str, InterpBegin) {
-		/* no interpolation required */
-		return obj, nil
-	}
-	var builder strings.Builder
-	for len(str) > 0 {
-		startIdx := strings.Index(str, InterpBegin)
-		if startIdx == -1 {
-			break
-		}
-		if startIdx > 0 && str[startIdx-1] == '\\' {
-			/* escape sequence: write until, not including escaping `\` and `{{`, continue after `{{`  */
-			builder.WriteString(str[:startIdx-1])
-			builder.WriteString(InterpBegin)
-			str = str[startIdx+len(InterpBegin):]
-			continue
-		}
-		builder.WriteString(str[:startIdx])
-		str = str[startIdx:]
-		endIdx := strings.Index(str, InterpEnd)
-		if endIdx == -1 {
-			/* unmatched beginning */
-			builder.WriteString(InterpBegin)
-			str = str[len(InterpBegin):]
-		}
-		varName := str[len(InterpBegin):endIdx]
-		doEncode := false
-		if varName[0] == '#' {
-			doEncode = true
-			varName = varName[1:]
-		}
 
-		var replacementStr ObjectString
-
-		if doEncode {
-			replacement, err := GetScope[Object](scope, ObjectString{obj.ObjectBase, varName})
-			if err != nil {
-				return nil, err
-			}
-			enc, err := json.Marshal(replacement.jsonObject())
-			if err != nil {
-				return nil, err
-			}
-			replacementStr = ObjectString{content: string(enc)}
-		} else {
-			var err error
-			replacementStr, err = GetScope[ObjectString](scope, ObjectString{obj.ObjectBase, varName})
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		builder.WriteString(replacementStr.content)
-		str = str[endIdx+len(InterpEnd):]
-	}
-	builder.WriteString(str)
-	obj.content = builder.String()
-	return obj, nil
+	return res, nil
 }
 
-func (o ObjectNumber) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	return o, nil
-}
-
-func (o ObjectBoolean) resolve(scope map[string]Object, ev *Evaluator) (Object, error) {
-	return o, nil
-}
-
-func (obj ObjectMap) hashValue(w io.Writer) {
+func (obj MapExpr) hashValue(w io.Writer) {
 	fmt.Fprint(w, "map")
-	keys := slices.Collect(maps.Keys(obj.values))
-	slices.Sort(keys)
-	for _, k := range keys {
-		obj.values[k].hashValue(w)
+	for _, k := range obj.expr {
+		k.hashValue(w)
 	}
 }
 
-func (obj ObjectArray) hashValue(w io.Writer) {
-	fmt.Fprint(w, "list")
-	for _, elem := range obj.values {
-		elem.hashValue(w)
-	}
-}
-
-func (obj ObjectString) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj.content)
-	fmt.Fprint(w, obj.content)
-}
-
-func (obj ObjectNumber) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj.value)
-	fmt.Fprint(w, obj.value)
-}
-
-func (obj ObjectBoolean) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj.value)
-	fmt.Fprint(w, obj.value)
-}
-
-func (obj ObjectMap) encodeEnviron(root bool) (string, error) {
+func (obj MapValue) encodeEnviron(root bool) (string, error) {
 	if !root {
 		return "", fmt.Errorf("%s: unable to encode nested %T", obj.position(), obj.values)
 	}
@@ -424,7 +176,63 @@ func (obj ObjectMap) encodeEnviron(root bool) (string, error) {
 	return builder.String(), nil
 }
 
-func (obj ObjectArray) encodeEnviron(root bool) (string, error) {
+type ArrayExpr struct {
+	BaseExpr
+
+	values []Expression
+}
+
+type ArrayValue struct {
+	BaseExpr
+
+	values []Value
+}
+
+func (o ArrayValue) jsonObject() any {
+	result := make([]any, len(o.values))
+	for i, v := range o.values {
+		result[i] = v.jsonObject()
+	}
+	return result
+}
+
+func (o ArrayExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	res := ArrayValue{
+		BaseExpr: o.BaseExpr,
+		values:   make([]Value, len(o.values)),
+	}
+	err := parallelResolve(slices.All(o.values), func(i int, v Value) { res.values[i] = v }, scope, ev)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(o.values) > 0 {
+		if head, ok := res.values[0].(StringValue); ok && head.content == "@multiline" {
+			var builder strings.Builder
+			for i, elem := range res.values[1:] {
+				selem, ok := elem.(StringValue)
+				if !ok {
+					return nil, fmt.Errorf("%s: non-string in @multiline-array: %T", elem.position(), elem)
+				}
+				if i > 0 {
+					builder.WriteByte('\n')
+				}
+				builder.WriteString(selem.content)
+			}
+			return StringValue{res.BaseExpr, builder.String()}, nil
+		}
+	}
+	return res, nil
+}
+
+func (obj ArrayExpr) hashValue(w io.Writer) {
+	fmt.Fprint(w, "list")
+	for _, elem := range obj.values {
+		elem.hashValue(w)
+	}
+}
+
+func (obj ArrayValue) encodeEnviron(root bool) (string, error) {
 	if !root {
 		return "", fmt.Errorf("%s: unable to encode nested %T", obj.position(), obj.values)
 	}
@@ -442,23 +250,36 @@ func (obj ObjectArray) encodeEnviron(root bool) (string, error) {
 	return builder.String(), nil
 }
 
-func (obj ObjectString) encodeEnviron(root bool) (string, error) {
+func (o ArrayValue) symlink(resname string) error {
+	var errs []error
+	if resname != "" {
+		for i, r := range o.values {
+			errs = append(errs, r.symlink(fmt.Sprintf("%s-%d", resname, i)))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+type StringValue struct {
+	BaseExpr
+
+	content string
+}
+
+func (o StringValue) jsonObject() any {
+	return o.content
+}
+
+func (obj StringValue) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj.content)
+	fmt.Fprint(w, obj.content)
+}
+
+func (obj StringValue) encodeEnviron(root bool) (string, error) {
 	return obj.content, nil
 }
 
-func (obj ObjectNumber) encodeEnviron(root bool) (string, error) {
-	return strconv.FormatFloat(obj.value, 'f', -1, 64), nil
-}
-
-func (obj ObjectBoolean) encodeEnviron(root bool) (string, error) {
-	if obj.value {
-		return "1", nil
-	}
-	return "0", nil
-}
-
-func (o ObjectString) symlink(resname string) error {
-	fmt.Printf("%s\n", o.content)
+func (o StringValue) symlink(resname string) error {
 	if resname != "" {
 		if stat, err := os.Lstat(resname); err == nil && (stat.Mode()&os.ModeType) != os.ModeSymlink {
 			return fmt.Errorf("unable to make symlink: exist")
@@ -469,12 +290,249 @@ func (o ObjectString) symlink(resname string) error {
 	return nil
 }
 
-func (o ObjectArray) symlink(resname string) error {
-	var errs []error
-	if resname != "" {
-		for i, r := range o.values {
-			errs = append(errs, r.symlink(fmt.Sprintf("%s-%d", resname, i)))
+type StringExpr struct {
+	BaseExpr
+
+	content []string
+	interp  []Expression
+}
+
+func (o StringExpr) jsonObject() any {
+	return o.content
+}
+
+func (obj StringExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	var res strings.Builder
+	for i := range obj.content {
+		res.WriteString(obj.content[i])
+		if obj.interp[i] == nil {
+			continue
+		}
+		intp, err := obj.interp[i].resolve(scope, ev)
+		if err != nil {
+			return nil, err
+		}
+		switch intp := intp.(type) {
+		case StringValue:
+			res.WriteString(intp.content)
+		case PathExpr:
+			res.WriteString(intp.value)
+		default:
+			return nil, fmt.Errorf("%s: unable to interpolate %T", obj.position(), intp)
 		}
 	}
-	return errors.Join(errs...)
+	return StringValue{
+		obj.BaseExpr,
+		res.String(),
+	}, nil
+}
+
+func (obj StringExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj.content)
+	fmt.Fprint(w, obj.content)
+}
+
+type NumberExpr struct {
+	BaseExpr
+
+	value float64
+}
+
+func (o NumberExpr) jsonObject() any {
+	return o.value
+}
+
+func (o NumberExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	return o, nil
+}
+
+func (obj NumberExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprint(w, obj.value)
+}
+
+func (obj NumberExpr) encodeEnviron(root bool) (string, error) {
+	return strconv.FormatFloat(obj.value, 'f', -1, 64), nil
+}
+
+type BooleanExpr struct {
+	BaseExpr
+
+	value bool
+}
+
+func (o BooleanExpr) jsonObject() any {
+	return o.value
+}
+
+func (o BooleanExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	return o, nil
+}
+
+func (obj BooleanExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprint(w, obj.value)
+}
+
+func (obj BooleanExpr) encodeEnviron(root bool) (string, error) {
+	if obj.value {
+		return "1", nil
+	}
+	return "0", nil
+}
+
+type PathExpr struct {
+	BaseExpr
+
+	value string
+}
+
+func (o PathExpr) jsonObject() any {
+	return o.value
+}
+
+func (o PathExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	return o, nil
+}
+
+func (obj PathExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprint(w, obj.value)
+}
+
+func (obj PathExpr) encodeEnviron(root bool) (string, error) {
+	return obj.value, nil
+}
+
+type VarExpr struct {
+	BaseExpr
+
+	name string
+}
+
+func (o VarExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	val, ok := scope[o.name]
+	if !ok {
+		return nil, fmt.Errorf("%s: not in scope: %s", o.position(), o.name)
+	}
+	return val, nil
+	// for _, attr := range o.name[1:] {
+	// 	val, err := val.resolve(scope, ev)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	switch obj := val.(type) {
+	// 	case MapExpr:
+	// 		val, ok = obj.values[attr]
+	// 		if !ok {
+	// 			return nil, fmt.Errorf("%s: map has no attribute %s", o.position(), attr)
+	// 		}
+	// 		val, err = val.resolve(scope, ev)
+	// 		if err != nil {
+	// 			return nil, err
+	// 		}
+	// 	default:
+	// 		return nil, fmt.Errorf("%s: %T has no attributes", o.position(), obj)
+	// 	}
+	// }
+}
+
+func (obj VarExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprint(w, obj.name)
+}
+
+type AttributeExpr struct {
+	BaseExpr
+
+	base Expression
+	name string
+}
+
+func (o AttributeExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	val, err := o.base.resolve(scope, ev)
+	if err != nil {
+		return nil, err
+	}
+	switch obj := val.(type) {
+	case MapValue:
+		val, ok := obj.values[o.name]
+		if !ok {
+			return nil, fmt.Errorf("%s: map has no attribute %s", o.position(), o.name)
+		}
+		return val, nil
+	default:
+		return nil, fmt.Errorf("%s: %T has no attributes", o.position(), obj)
+	}
+}
+
+func (obj AttributeExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprint(w, obj.name)
+}
+
+type IncludeExpr struct {
+	BaseExpr
+
+	name Expression
+}
+
+func (o IncludeExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	pathAny, err := o.name.resolve(scope, ev)
+	if err != nil {
+		return nil, err
+	}
+	path, ok := pathAny.(PathExpr)
+	if !ok {
+		return nil, fmt.Errorf("%s: unable to include non-path: %T", o.position(), path)
+	}
+	expr, err := parseFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return expr.resolve(scope, ev)
+}
+
+func (obj IncludeExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprint(w, obj.name)
+}
+
+type DefineExpr struct {
+	BaseExpr
+
+	define map[string]Expression
+	value  Expression
+}
+
+func (o DefineExpr) jsonObject() any {
+	return nil
+}
+
+func (o DefineExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	newscope := maps.Clone(scope)
+	var err error
+	for k, v := range o.define {
+		newscope[k], err = v.resolve(scope, ev)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return o.value.resolve(newscope, ev)
+}
+
+func (obj DefineExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	obj.value.hashValue(w)
+}
+
+type OutputExpr struct {
+	BaseExpr
+
+	attrs Expression
+}
+
+func (obj OutputExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	obj.attrs.hashValue(w)
 }

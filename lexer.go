@@ -29,22 +29,31 @@ const (
 	TokenIdent                     /* identifier123 */
 	TokenTrue                      /* true */
 	TokenFalse                     /* false */
+	TokenLet                       /* let */
+	TokenIn                        /* in */
+	TokenEquals                    /* = */
+	TokenPath                      /* ../hello, ./foo */
+	TokenInclude                   /* include */
+	TokenDot                       /* . */
+	TokenWith                      /* with */
+	TokenOutput                    /* output */
+	TokenLParen                    /* ( */
+	TokenRParen                    /* ) */
 )
 
 func (t Token) String() string {
+	for k, v := range symbols {
+		if v == t {
+			return fmt.Sprintf("'%c'", k)
+		}
+	}
+	for k, v := range keywords {
+		if v == t {
+			return fmt.Sprintf("'%s'", k)
+		}
+	}
+
 	switch t {
-	case TokenLBrace:
-		return "'{'"
-	case TokenRBrace:
-		return "'}'"
-	case TokenLBracket:
-		return "'['"
-	case TokenRBracket:
-		return "']'"
-	case TokenColon:
-		return "':'"
-	case TokenComma:
-		return "','"
 	case TokenString:
 		return "'\"'"
 	case TokenInterp:
@@ -63,10 +72,10 @@ func (t Token) String() string {
 		return "float"
 	case TokenIdent:
 		return "identifier"
-	case TokenTrue:
-		return "'true'"
-	case TokenFalse:
-		return "'false'"
+	case TokenPath:
+		return "path"
+	case TokenInclude:
+		return "'include'"
 	case TokenEOF:
 		return "end-of-file"
 	}
@@ -82,6 +91,7 @@ const (
 	ModeStringEscape
 	ModeInterp
 	ModeIdent
+	ModePath
 )
 
 type Scanner struct {
@@ -108,13 +118,22 @@ var symbols = map[rune]Token{
 	'}': TokenRBrace,
 	'[': TokenLBracket,
 	']': TokenRBracket,
+	'(': TokenLParen,
+	')': TokenRParen,
 	':': TokenColon,
 	',': TokenComma,
+	'=': TokenEquals,
+	'.': TokenDot,
 }
 
 var keywords = map[string]Token{
-	"true":  TokenTrue,
-	"false": TokenFalse,
+	"true":    TokenTrue,
+	"false":   TokenFalse,
+	"let":     TokenLet,
+	"include": TokenInclude,
+	"in":      TokenIn,
+	"with":    TokenWith,
+	"output":  TokenOutput,
 }
 
 func isSymbol(r rune) bool {
@@ -122,13 +141,10 @@ func isSymbol(r rune) bool {
 	return ok
 }
 
-var lastkeyword string
-
-func isKeyword(rs []rune) bool {
+func isPathPrefix(rs []rune) bool {
 	str := string(rs)
-	for key := range keywords {
-		if strings.HasPrefix(str, key) {
-			lastkeyword = key
+	for _, pre := range []string{"/", "./", "../"} {
+		if strings.HasPrefix(str, pre) {
 			return true
 		}
 	}
@@ -140,7 +156,7 @@ func (s *Scanner) Next() error {
 		var chr rune = -1
 		if len(s.runes) == 0 {
 			if s.scanner.Scan() {
-				s.current = s.scanner.Text()
+				s.current = s.scanner.Text() + "\n"
 				s.runes = []rune(s.current)
 				s.Linenr++
 				s.End = 0
@@ -159,13 +175,11 @@ func (s *Scanner) Next() error {
 				s.Token = TokenEOF
 				s.Start = s.End
 				return nil
-			case chr == ' ' || chr == '\t':
+			case unicode.IsSpace(chr):
 				s.consume(1)
-			case isSymbol(chr):
-				s.Token = symbols[chr]
-				s.consume(1)
-				s.Start = s.End - 1
-				return nil
+			case isPathPrefix(s.runes):
+				s.push(ModePath)
+				s.Start = s.End
 			case chr == '"':
 				s.Token = TokenString
 				s.consume(1)
@@ -178,10 +192,10 @@ func (s *Scanner) Next() error {
 				s.Start = s.End - 1
 				s.pop()
 				return nil
-			case isKeyword(s.runes):
-				s.Token = keywords[lastkeyword]
-				s.consume(len(lastkeyword))
-				s.Start = s.End - len(lastkeyword)
+			case isSymbol(chr):
+				s.Token = symbols[chr]
+				s.consume(1)
+				s.Start = s.End - 1
 				return nil
 			case unicode.IsLetter(chr):
 				s.push(ModeIdent)
@@ -217,7 +231,7 @@ func (s *Scanner) Next() error {
 				return nil
 			case '(':
 				s.Token = TokenInterp
-				s.consume(2)
+				s.consume(1)
 				s.pop()
 				s.push(ModeInterp)
 				return nil
@@ -243,7 +257,19 @@ func (s *Scanner) Next() error {
 			if unicode.IsLetter(chr) || unicode.IsDigit(chr) {
 				s.consume(1)
 			} else {
-				s.Token = TokenIdent
+				if tok, ok := keywords[s.current[s.Start:s.End]]; ok {
+					s.Token = tok
+				} else {
+					s.Token = TokenIdent
+				}
+				s.pop()
+				return nil
+			}
+		case ModePath:
+			if !unicode.IsSpace(chr) && !strings.ContainsRune(",{}[]()'\"", chr) {
+				s.consume(1)
+			} else {
+				s.Token = TokenPath
 				s.pop()
 				return nil
 			}

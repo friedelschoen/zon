@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"strings"
 	"time"
 )
 
@@ -27,27 +26,19 @@ type Evaluator struct {
 	Outputs []string
 }
 
-func getNames(result Object) (names []string) {
-	for node := result; node != nil; node = node.Parent() {
-		n := "?"
-		if mapv, ok := node.(ObjectMap); ok {
-			if nameAny, ok := mapv.values["@name"]; ok {
-				if name, ok := nameAny.(ObjectString); ok {
-					n = name.content
-				}
-			}
-		}
-		if len(names) == 0 || names[len(names)-1] != n {
-			names = append(names, n)
-		}
+func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	attrsAny, err := o.attrs.resolve(scope, ev)
+	if err != nil {
+		return nil, err
 	}
-	return
-}
+	result, ok := attrsAny.(MapValue)
+	if !ok {
+		return nil, fmt.Errorf("%s: unable to output non-map: %T", o.position(), attrsAny)
+	}
 
-func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	impure := false
 	if impureAny, ok := result.values["@impure"]; ok {
-		if impureVal, ok := impureAny.(ObjectBoolean); ok {
+		if impureVal, ok := impureAny.(BooleanExpr); ok {
 			impure = impureVal.value
 		}
 	}
@@ -60,23 +51,17 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 			hashsum[i] = byte(rand.Int())
 		}
 	} else {
-		result.hashValue(hashlib)
+		o.attrs.hashValue(hashlib)
 		hashsum = hashlib.Sum(nil)
 	}
 	hashstr := hex.EncodeToString(hashsum)
-
-	names := getNames(result)
-
-	if len(names) >= 2 {
-		ev.Edges = append(ev.Edges, [2]string{names[1], names[0]})
-	}
 
 	ev.Outputs = append(ev.Outputs, hashstr)
 
 	cwd, _ := os.Getwd()
 	outdir := path.Join(cwd, ev.CacheDir, hashstr)
 	if _, err := os.Stat(outdir); (ev.DryRun || err == nil) && !ev.Force {
-		return ObjectString{content: outdir}, nil
+		return StringValue{content: outdir}, nil
 	}
 
 	start := time.Now()
@@ -90,18 +75,18 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	}()
 
 	var cmdline []string
-	var token Object
+	var token Value
 
 	if installAny, ok := result.values["@output"]; ok {
 		token = installAny
-		install, ok := installAny.(ObjectString)
+		install, ok := installAny.(StringValue)
 		if !ok {
 			return nil, fmt.Errorf("%s: @output must be a string", installAny.position())
 		}
 
 		interpreter := ev.Interpreter
 		if interpreterAny, ok := result.values["@interpreter"]; ok {
-			if str, ok := interpreterAny.(ObjectString); ok {
+			if str, ok := interpreterAny.(StringValue); ok {
 				interpreter = str.content
 			} else {
 				return nil, fmt.Errorf("%s: @interpreter must be a string", interpreterAny.position())
@@ -110,20 +95,22 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 		cmdline = []string{interpreter, "-e", "-c", install.content, "builder"}
 	} else if builderAny, ok := result.values["@builder"]; ok {
 		token = builderAny
-		builder, ok := builderAny.(ObjectString)
+		builder, ok := builderAny.(StringValue)
 		if !ok {
 			return nil, fmt.Errorf("%s: @builder must be a string", builderAny.position())
 		}
 		cmdline = []string{builder.content}
+	} else {
+		return nil, fmt.Errorf("%s: missing @output or @builder", o.position())
 	}
 
 	if argsAny, ok := result.values["@args"]; ok {
-		args, ok := argsAny.(ObjectArray)
+		args, ok := argsAny.(ArrayValue)
 		if !ok {
 			return nil, fmt.Errorf("%s: @args must be an array", argsAny.position())
 		}
 		for _, elem := range args.values[1:] {
-			arg, ok := elem.(ObjectString)
+			arg, ok := elem.(StringValue)
 			if !ok {
 				return nil, fmt.Errorf("%s: non-string in @args: %T", elem.position(), elem)
 			}
@@ -135,11 +122,11 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	var deletebuilddir bool
 
 	if sourcedirAny, ok := result.values["@source"]; ok {
-		sourcedir, ok := sourcedirAny.(ObjectString)
+		sourcedir, ok := sourcedirAny.(PathExpr)
 		if !ok {
 			return nil, fmt.Errorf("%s: @source must be a string", sourcedirAny.position())
 		}
-		builddir = sourcedir.content
+		builddir = sourcedir.value
 	} else {
 		var err error
 		builddir, err = os.MkdirTemp("", "bake-")
@@ -184,12 +171,8 @@ func (ev *Evaluator) output(result ObjectMap) (Object, error) {
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
-	if len(names) > 0 {
-		fmt.Fprintf(os.Stderr, "%s %s (%v)\n", hashstr, strings.Join(names, " > "), dur)
-	} else {
-		fmt.Fprintf(os.Stderr, "%s (%v)\n", hashstr, dur)
-	}
+	fmt.Fprintf(os.Stderr, "%s (%v)\n", hashstr, dur)
 
 	success = true
-	return ObjectString{content: outdir}, nil
+	return PathExpr{value: outdir}, nil
 }
