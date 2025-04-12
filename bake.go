@@ -63,10 +63,10 @@ func main() {
 	}
 
 	filename := ""
-	scope := make(map[string]Object)
+	scope := make(map[string]Value)
 	for _, arg := range flag.Args() {
 		if name, value, ok := strings.Cut(arg, "="); ok {
-			scope[name] = ObjectString{ObjectBase{filename: "<commandline>"}, value}
+			scope[name] = StringValue{BaseExpr{filename: "<commandline>"}, value}
 		} else if filename == "" {
 			filename = arg
 		} else {
@@ -80,7 +80,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ast, err := parseFile(ObjectString{ObjectBase{filename: "<commandline>"}, filename}, nil)
+	ast, err := parseFile(PathExpr{BaseExpr{filename: "<commandline>"}, filename})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

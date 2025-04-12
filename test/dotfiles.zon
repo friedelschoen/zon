@@ -1,0 +1,24 @@
+let
+    spaceglenda = "https://github.com/9fans/plan9port/raw/afea5fc3fd16a2865d0af52563f601a4c03d8256/mac/spaceglenda.png",
+    util = include ./util.zon
+in output {
+    with util.merge,
+    "@name": "merge-dotfiles",
+    "paths": [
+        ./dotfiles,
+        include ./services.zon,
+        include ./apps.zon,
+        output {
+            "@name": "bgglenda",
+            "source": output {
+                with util.fetch,
+                "url": "\(spaceglenda)"
+            },
+            "@output": [
+                "@multiline",
+                "mkdir -p $out/.config",
+                "magick convert -resize 12.5% $source $out/.config/bgglenda.png"
+            ]
+        }
+    ]
+}

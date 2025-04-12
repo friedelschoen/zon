@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,9 +16,8 @@ type Parser struct {
 	filename string
 }
 
-func (p *Parser) base(parent Object) ObjectBase {
-	return ObjectBase{
-		parent:   parent,
+func (p *Parser) base() BaseExpr {
+	return BaseExpr{
 		filename: p.filename,
 		offset:   p.s.Start,
 		line:     p.s.Linenr,
@@ -37,22 +35,20 @@ func (p *Parser) expect(toks ...Token) error {
 		}
 		return fmt.Errorf("%s:%d:%d-%d: expected %s, got '%s' (type %v)", path.Base(p.filename), p.s.Linenr, p.s.Start+1, p.s.End+1, expected.String(), p.s.Text(), p.s.Token)
 	}
-	err := p.s.Next()
-	if err != nil {
+	if err := p.s.Next(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (p *Parser) parseString(parent Object) (Object, error) {
-	obj := ObjectString{
-		ObjectBase: p.base(parent),
+func (p *Parser) parseString() (Expression, error) {
+	obj := StringExpr{
+		BaseExpr: p.base(),
 	}
 
 	var builder strings.Builder
 	for {
-		err := p.s.Next()
-		if err != nil {
+		if err := p.s.Next(); err != nil {
 			return nil, err
 		}
 
@@ -86,104 +82,143 @@ func (p *Parser) parseString(parent Object) (Object, error) {
 			}
 		case TokenStringEnd:
 			goto exit
+		case TokenInterp:
+			obj.content = append(obj.content, builder.String())
+			builder.Reset()
+			if err := p.s.Next(); err != nil {
+				return nil, err
+			}
+			intp, err := p.parseValue()
+			if err != nil {
+				return nil, err
+			}
+			obj.interp = append(obj.interp, intp)
 		default:
-			err := p.expect(TokenStringChar, TokenStringEnd)
+			err := p.expect(TokenStringChar, TokenStringEnd, TokenInterp)
 			return nil, err
 		}
 	}
 exit:
-	err := p.s.Next()
-	if err != nil {
+	if err := p.s.Next(); err != nil {
 		return nil, err
 	}
 
-	obj.content = builder.String()
-	if strings.HasPrefix(obj.content, "./") {
-		obj.content = path.Join(p.cwd, obj.content)
-	}
+	obj.content = append(obj.content, builder.String())
+	obj.interp = append(obj.interp, nil)
 	return obj, nil
 }
 
-func (p *Parser) parseValue(parent Object) (Object, error) {
+func (p *Parser) parseBase() (Expression, error) {
 	switch p.s.Token {
 	case TokenLBrace:
-		return p.parseMap(parent)
+		return p.parseMap()
 	case TokenLBracket:
-		return p.parseArray(parent)
+		return p.parseArray()
 	case TokenString:
-		return p.parseString(parent)
+		return p.parseString()
+	case TokenIdent:
+		return p.parseVar()
+	case TokenInclude:
+		return p.parseInclude()
+	case TokenOutput:
+		return p.parseOutput()
+	case TokenLParen:
+		return p.parseEnclosed()
 	case TokenInteger:
 		val, _ := strconv.ParseFloat(p.s.Text(), 64)
-		obj := ObjectNumber{
-			p.base(parent),
+		obj := NumberExpr{
+			p.base(),
 			val,
 		}
 		if err := p.s.Next(); err != nil {
 			return nil, err
 		}
 		return obj, nil
+	case TokenPath:
+		obj := PathExpr{
+			p.base(),
+			p.s.Text(),
+		}
+		if obj.value[0] != '/' {
+			obj.value = path.Clean(p.cwd + "/" + obj.value)
+		}
+		if err := p.s.Next(); err != nil {
+			return nil, err
+		}
+		return obj, nil
 	case TokenTrue, TokenFalse:
-		obj := ObjectBoolean{
-			p.base(parent),
+		obj := BooleanExpr{
+			p.base(),
 			p.s.Token == TokenTrue,
 		}
 		if err := p.s.Next(); err != nil {
 			return nil, err
 		}
 		return obj, nil
+	case TokenLet:
+		return p.parseDefinition()
 	}
-	return nil, fmt.Errorf("%s: invalid token: %v", p.base(nil).position(), p.s.Token)
+	return nil, fmt.Errorf("%s: invalid token: %v", p.base().position(), p.s.Token)
 }
 
-func (p *Parser) parseMap(parent Object) (Object, error) {
-	obj := ObjectMap{
-		ObjectBase: p.base(parent),
-		defines:    make(map[string]Object),
-		values:     make(map[string]Object),
+func (p *Parser) parseValue() (Expression, error) {
+	base, err := p.parseBase()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.s.Token == TokenDot {
+		if err := p.s.Next(); err != nil {
+			return nil, err
+		}
+		if p.s.Token != TokenIdent {
+			return nil, p.expect(TokenIdent)
+		}
+		base = AttributeExpr{
+			BaseExpr: p.base(),
+			base:     base,
+			name:     p.s.Text(),
+		}
+		if err := p.s.Next(); err != nil {
+			return nil, err
+		}
+	}
+	return base, nil
+}
+
+func (p *Parser) parseMap() (Expression, error) {
+	obj := MapExpr{
+		BaseExpr: p.base(),
 	}
 
 	p.s.Token = TokenComma
 	for p.s.Token == TokenComma {
-		err := p.s.Next()
-		if err != nil {
+		if err := p.s.Next(); err != nil {
 			return nil, err
 		}
-		key, err := p.parseValue(obj)
-		if err != nil {
-			return nil, err
-		}
-		keyStr, ok := key.(ObjectString)
-		if !ok {
-			return nil, fmt.Errorf("%s: expected string-key, got %T", obj.position(), key)
-		}
-		if err := p.expect(TokenColon); err != nil {
-			return nil, err
-		}
-		value, err := p.parseValue(obj)
-		if err != nil {
-			return nil, err
-		}
-		switch keyStr.content {
-		case "@define":
-			defs, ok := value.(ObjectMap)
-			if !ok {
-				return nil, fmt.Errorf("%s: @define must be a map, got %T", value.position(), value)
+		if p.s.Token == TokenWith {
+			if err := p.s.Next(); err != nil {
+				return nil, err
 			}
-			maps.Copy(obj.defines, defs.values)
-		case "@expand":
-			str, ok := value.(ObjectString)
-			if !ok {
-				return nil, fmt.Errorf("%s: @expand variable must be string, got %T", value.position(), value)
+			val, err := p.parseValue()
+			if err != nil {
+				return nil, err
 			}
-			obj.extends = append(obj.extends, str)
-		case "@include":
-			str, ok := value.(ObjectString)
-			if !ok {
-				return nil, fmt.Errorf("%s: @include must be a string, got %T", value.position(), value)
+			obj.extends = append(obj.extends, val)
+		} else {
+			key, err := p.parseValue()
+			if err != nil {
+				return nil, err
 			}
-			obj.includes = append(obj.includes, str)
-		default:
-			obj.values[keyStr.content] = value
+			obj.expr = append(obj.expr, key)
+			if err := p.expect(TokenColon); err != nil {
+				return nil, err
+			}
+			value, err := p.parseValue()
+			if err != nil {
+				return nil, err
+			}
+			obj.expr = append(obj.expr, value)
 		}
 	}
 
@@ -191,28 +226,58 @@ func (p *Parser) parseMap(parent Object) (Object, error) {
 		return nil, err
 	}
 
-	if attr, ok := obj.values["@"]; ok {
-		if len(obj.values) != 1 {
-			return nil, fmt.Errorf("%s: map with @ has more than 1 value", obj.values["@"].position())
+	return obj, nil
+}
+
+func (p *Parser) parseDefinition() (Expression, error) {
+	obj := DefineExpr{
+		BaseExpr: p.base(),
+		define:   make(map[string]Expression),
+	}
+
+	p.s.Token = TokenComma
+	for p.s.Token == TokenComma {
+		if err := p.s.Next(); err != nil {
+			return nil, err
 		}
-		obj.unwrap = attr
+		keyStr := p.s.Text()
+		if err := p.expect(TokenIdent); err != nil {
+			return nil, err
+		}
+		if err := p.expect(TokenEquals); err != nil {
+			return nil, err
+		}
+		value, err := p.parseValue()
+		if err != nil {
+			return nil, err
+		}
+		obj.define[keyStr] = value
+	}
+
+	err := p.expect(TokenIn)
+	if err != nil {
+		return nil, err
+	}
+
+	obj.value, err = p.parseValue()
+	if err != nil {
+		return nil, err
 	}
 
 	return obj, nil
 }
 
-func (p *Parser) parseArray(parent Object) (Object, error) {
-	obj := ObjectArray{
-		ObjectBase: p.base(parent),
+func (p *Parser) parseArray() (Expression, error) {
+	obj := ArrayExpr{
+		BaseExpr: p.base(),
 	}
 
 	p.s.Token = TokenComma
 	for p.s.Token == TokenComma {
-		err := p.s.Next()
-		if err != nil {
+		if err := p.s.Next(); err != nil {
 			return nil, err
 		}
-		value, err := p.parseValue(obj)
+		value, err := p.parseValue()
 		if err != nil {
 			return nil, err
 		}
@@ -226,21 +291,78 @@ func (p *Parser) parseArray(parent Object) (Object, error) {
 	return obj, nil
 }
 
-func parseFile(filename ObjectString, parent Object) (Object, error) {
-	file, err := os.Open(filename.content)
+func (p *Parser) parseVar() (Expression, error) {
+	obj := VarExpr{
+		p.base(),
+		p.s.Text(),
+	}
+
+	if err := p.s.Next(); err != nil {
+		return nil, err
+	}
+
+	return obj, nil
+}
+
+func (p *Parser) parseInclude() (Expression, error) {
+	obj := IncludeExpr{
+		p.base(),
+		nil,
+	}
+	if err := p.s.Next(); err != nil {
+		return nil, err
+	}
+	var err error
+	obj.name, err = p.parseValue()
+	return obj, err
+}
+
+func (p *Parser) parseOutput() (Expression, error) {
+	obj := OutputExpr{
+		p.base(),
+		nil,
+	}
+	if err := p.s.Next(); err != nil {
+		return nil, err
+	}
+	var err error
+	obj.attrs, err = p.parseValue()
+	return obj, err
+}
+
+func (p *Parser) parseEnclosed() (Expression, error) {
+	if err := p.s.Next(); err != nil {
+		return nil, err
+	}
+	obj, err := p.parseValue()
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.content, err)
+		return nil, err
+	}
+	// if err := p.s.Next(); err != nil {
+	// 	return nil, err
+	// }
+	err = p.expect(TokenRParen)
+	if err != nil {
+		return nil, err
+	}
+	return obj, err
+}
+
+func parseFile(filename PathExpr) (Expression, error) {
+	file, err := os.Open(filename.value)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.value, err)
 	}
 	defer file.Close()
-	abs, _ := filepath.Abs(filename.content)
+	abs, _ := filepath.Abs(filename.value)
 
 	scanner := NewScanner(file)
 	err = scanner.Next()
 	if err != nil {
 		return nil, err
 	}
-	parser := Parser{s: scanner, cwd: path.Dir(abs), filename: filename.content}
-	val, err := parser.parseValue(parent)
+	parser := Parser{s: scanner, cwd: path.Dir(abs), filename: filename.value}
+	val, err := parser.parseValue()
 	if err != nil {
 		return nil, err
 	}
