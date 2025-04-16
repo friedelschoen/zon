@@ -1,6 +1,5 @@
 let service = {
-    "name": "@name",
-    "@name": "service-{{name}}",
+    "@name": "service",
     "@output": [
         "@multiline",
         "mkdir -p $out/$name",
@@ -15,196 +14,157 @@ let service = {
     "@include": ./util.zon,
     "@name": "services",
     "prefix": ".xservice",
-    "paths": [
-        output {
-            "@define": {
-                "name": "9wm"
-            },
-            "enable": false,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "SVDIR=.. sv check xserver > /dev/null || exit 1",
-                "",
-                "cd $HOMEs",
-                "exec 9wm"
-            ],
-            with service
-        },
-        output {
-            "@define": {
-                "name": "battery-applet"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "exec cbatticon"
-            ],
-            with service
-        },
-        output {
-            "@define": {
-                "name": "blueman-applet"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "exec blueman-applet"
-            ],
-            with service
-        },
-     output   {
-            "@define": {
-                "name": "dbus-session"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "exec dbus-daemon --nofork --session"
-            ],
-            with service
-        },
-     output    {
-            "@define": {
-                "name": "dwm"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "cd $HOME",
-                "exec dwm"
-            ],
-            with service
-        },
-      output   {
-            "@define": {
-                "name": "nm-applet"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "exec nm-applet"
-            ],
-            with service
-        },
-      output   {
-            "@define": {
-                "name": "pa-applet"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "exec pa-applet"
-            ],
-            with service
-        },
-       output  {
-            "@define": {
-                "name": "slstatus"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "FIFO=/tmp/slstatus.fifo",
-                "",
-                "[ -p $FIFO ] || rm -f $FIFO",
-                "mkfifo $FIFO",
-                "",
-                "exec slstatus -p $FIFO"
-            ],
-            with service
-        },
-      output   {
-            "@define": {
-                "name": "slstatus-xbps"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/bash",
-                "",
-                "OUTPUT=/tmp/xbps-updates.txt",
-                "",
-                "while true; do",
-                "    updates=$(xbps-install -Mun | wc -l)",
-                "",
-                "    if [ $updates -ne 0 ]; then",
-                "        echo $updates > $OUTPUT",
-                "    else",
-                "        echo up-to-date > $OUTPUT",
-                "    fi",
-                "    sleep 120",
-                "done"
-            ],
-            with service
-        },
-      output   {
-            "@define": {
-                "name": "stw-service"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "exec stw -p 1 -B 10 -y 20 psvstat ~/.xservice/*"
-            ],
-            with service
-        },
-      output   {
-            "@define": {
-                "name": "tiramisu"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "SVDIR=.. sv check slstatus > /dev/null || exit 1",
-                "",
-                "exec tiramisu -o '\\\\x04#source\\\\x05#summary: #body\\\\n' | xargs -i printf '%b' '{}' > /tmp/slstatus.fifo"
-            ],
-            with service
-        },
-        output {
-            "@define": {
-                "name": "udiskie"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "exec udiskie -ant"
-            ],
-            with service
-        },
-       output  {
-            "@define": {
-                "name": "xfce-polkit"
-            },
-            "enable": true,
-            "run": [
-                "@multiline",
-                "#!/bin/sh",
-                "",
-                "exec /usr/libexec/xfce-polkit"
-            ],
-            with service
-        }
+    "paths": 		[
+		output {
+			with service,
+			"name": "9wm",
+			"enable": false,
+			"run": ''
+				#!/bin/sh
+
+				SVDIR=.. sv check xserver > /dev/null || exit 1
+
+				cd $HOMEs
+				exec 9wm
+			''
+		},
+		output {
+			with service,
+			"name": "battery-applet",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				exec cbatticon
+			''
+		},
+		output {
+			with service,
+			"name": "blueman-applet",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				exec blueman-applet
+			''
+		},
+		output {
+			with service,
+			"name": "dbus-session",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				exec dbus-daemon --nofork --session
+			''
+		},
+		output {
+			with service,
+			"name": "dwm",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				cd $HOME
+				exec dwm
+			''
+		},
+		output {
+			with service,
+			"name": "nm-applet",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				exec nm-applet
+			''
+		},
+		output {
+			with service,
+			"name": "pa-applet",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				exec pa-applet
+			''
+		},
+		output {
+			with service,
+			"name": "slstatus",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				FIFO=/tmp/slstatus.fifo
+
+				[ -p $FIFO ] || rm -f $FIFO
+				mkfifo $FIFO
+
+				exec slstatus -p $FIFO
+			''
+		},
+		output {
+			with service,
+			"name": "slstatus-xbps",
+			"enable": true,
+			"run": ''
+				#!/bin/bash
+
+				=/tmp/xbps-updates.txt
+
+				while true; do
+				    updates=$(xbps-install -Mun | wc -l)
+
+				    if [ $updates -ne 0 ]; then
+				        echo $updates > $
+				    else
+				        echo up-to-date > $
+				    fi
+				    sleep 120
+				done
+			''
+		},
+		output {
+			with service,
+			"name": "stw-service",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+				exec stw -p 1 -B 10 -y 20 psvstat ~/.xservice/*
+			''
+		},
+		output {
+			with service,
+			"name": "tiramisu",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				SVDIR=.. sv check slstatus > /dev/null || exit 1
+
+				exec tiramisu -o '\\x04#source\\x05#summary: #body\\n' | xargs -i printf '%b' '{}' > /tmp/slstatus.fifo
+			''
+		},
+		output {
+			with service,
+			"name": "udiskie",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				exec udiskie -ant
+			''
+		},
+		output {
+			with service,
+			"name": "xfce-polkit",
+			"enable": true,
+			"run": ''
+				#!/bin/sh
+
+				exec /usr/libexec/xfce-polkit
+			''
+		}
     ]
 }

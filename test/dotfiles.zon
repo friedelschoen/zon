@@ -14,11 +14,10 @@ in output {
                 with util.fetch,
                 "url": "\(spaceglenda)"
             },
-            "@output": [
-                "@multiline",
-                "mkdir -p $out/.config",
-                "magick convert -resize 12.5% $source $out/.config/bgglenda.png"
-            ]
+            "@output": ''
+                mkdir -p $out/.config
+                magick convert -resize 12.5% $source $out/.config/bgglenda.png
+            ''
         }
     ]
 }

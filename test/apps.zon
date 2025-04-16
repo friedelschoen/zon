@@ -28,11 +28,10 @@ in output {
             },
             "config": ./configs/dmenu.h,
             "@name": "dmenu",
-            "@output": [
-                "@multiline",
-                "cp $config config.h",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                cp $config config.h
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -55,11 +54,10 @@ in output {
             },
             "config": ./configs/dwm.h,
             "@name": "dwm",
-            "@output": [
-                "@multiline",
-                "cp $config config.h",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                cp $config config.h
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -71,10 +69,9 @@ in output {
                 }
             },
             "@name": "gitin",
-            "@output": [
-                "@multiline",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -86,10 +83,9 @@ in output {
                 }
             },
             "@name": "pretty-sv",
-            "@output": [
-                "@multiline",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -109,11 +105,10 @@ in output {
             },
             "config": ./configs/slstatus.h,
             "@name": "slstatus",
-            "@output": [
-                "@multiline",
-                "cp $config config.h",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                cp $config config.h
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -134,11 +129,10 @@ in output {
             },
             "config": ./configs/st.h,
             "@name": "st",
-            "@output": [
-                "@multiline",
-                "cp $config config.h",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                cp $config config.h
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -151,11 +145,10 @@ in output {
             },
             "config": ./configs/stw.h,
             "@name": "stw",
-            "@output": [
-                "@multiline",
-                "cp $config config.h",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                cp $config config.h
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -178,11 +171,10 @@ in output {
             },
             "config": ./configs/surf.h,
             "@name": "surf",
-            "@output": [
-                "@multiline",
-                "cp $config config.h",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                cp $config config.h
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -201,11 +193,10 @@ in output {
             },
             "config": ./configs/tabbed.h,
             "@name": "tabbed",
-            "@output": [
-                "@multiline",
-                "cp $config config.h",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                cp $config config.h
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -217,11 +208,10 @@ in output {
                 }
             },
             "@name": "textselect",
-            "@output": [
-                "@multiline",
-                "mkdir -p $out/bin $out/share/man/man1",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                mkdir -p $out/bin $out/share/man/man1
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": output {
@@ -233,20 +223,18 @@ in output {
                 }
             },
             "@name": "weakbox",
-            "@output": [
-                "@multiline",
-                "mkdir -p $out/bin $out/share/man/man1",
-                "make PREFIX=$out install"
-            ]
+            "@output": ''
+                mkdir -p $out/bin $out/share/man/man1
+                make PREFIX=$out install
+            ''
         },
         output {
             "@source": ./assets,
             "@name": "gmicro",
-            "@output": [
-                "@multiline",
-                "mkdir -p $out/bin",
-                "ln -sv $PWD/gmicro $out/bin"
-            ]
+            "@output": ''
+                mkdir -p $out/bin
+                ln -sv $PWD/gmicro $out/bin
+            ''
         }
     ]
 }
