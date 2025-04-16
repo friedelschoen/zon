@@ -55,7 +55,7 @@ func (t Token) String() string {
 
 	switch t {
 	case TokenString:
-		return "'\"'"
+		return "'\"' or '\\'\\''"
 	case TokenInterp:
 		return "'\\('"
 	case TokenInterpEnd:
@@ -89,6 +89,7 @@ const (
 	ModeRoot    Mode = iota
 	ModeString
 	ModeStringEscape
+	ModeMultilineString
 	ModeInterp
 	ModeIdent
 	ModePath
@@ -186,6 +187,12 @@ func (s *Scanner) Next() error {
 				s.Start = s.End - 1
 				s.push(ModeString)
 				return nil
+			case strings.HasPrefix(string(s.runes), "''"):
+				s.Token = TokenString
+				s.consume(2)
+				s.Start = s.End - 2
+				s.push(ModeMultilineString)
+				return nil
 			case s.mode() == ModeInterp && chr == ')':
 				s.Token = TokenInterpEnd
 				s.consume(1)
@@ -216,6 +223,34 @@ func (s *Scanner) Next() error {
 				s.Start = s.End - 1
 				s.pop()
 				return nil
+			case '\n':
+				s.Start = s.End
+				return fmt.Errorf("illegal token: `\n`")
+			case -1:
+				s.Start = s.End
+				return fmt.Errorf("illegal token: end-of-line")
+			default:
+				s.Token = TokenStringChar
+				s.consume(1)
+				s.Start = s.End - 1
+				return nil
+			}
+		case ModeMultilineString:
+			if strings.HasPrefix(string(s.runes), "''") {
+				s.Token = TokenStringEnd
+				s.consume(2)
+				s.Start = s.End - 2
+				s.pop()
+				return nil
+			}
+			switch chr {
+			case '\\':
+				s.Start = s.End
+				s.consume(1)
+				s.push(ModeStringEscape)
+			case -1:
+				s.Start = s.End
+				return fmt.Errorf("illegal token: end-of-line")
 			default:
 				s.Token = TokenStringChar
 				s.consume(1)
@@ -224,7 +259,7 @@ func (s *Scanner) Next() error {
 			}
 		case ModeStringEscape:
 			switch chr {
-			case '"', '\\', 'b', 'f', 'n', 'r', 't':
+			case '"', '\'', '\\', 'b', 'f', 'n', 'r', 't', '\n':
 				s.Token = TokenStringEscape
 				s.consume(1)
 				s.pop()
@@ -235,6 +270,9 @@ func (s *Scanner) Next() error {
 				s.pop()
 				s.push(ModeInterp)
 				return nil
+			case -1:
+				s.Start = s.End
+				return fmt.Errorf("illegal token: end-of-line")
 			case 'u':
 				if len(s.runes) < 5 {
 					s.Start = s.End

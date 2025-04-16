@@ -61,7 +61,7 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	cwd, _ := os.Getwd()
 	outdir := path.Join(cwd, ev.CacheDir, hashstr)
 	if _, err := os.Stat(outdir); (ev.DryRun || err == nil) && !ev.Force {
-		return StringValue{content: outdir}, nil
+		return PathExpr{value: outdir}, nil
 	}
 
 	start := time.Now()
@@ -124,7 +124,7 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	if sourcedirAny, ok := result.values["@source"]; ok {
 		sourcedir, ok := sourcedirAny.(PathExpr)
 		if !ok {
-			return nil, fmt.Errorf("%s: @source must be a string", sourcedirAny.position())
+			return nil, fmt.Errorf("%s: @source must be a path", sourcedirAny.position())
 		}
 		builddir = sourcedir.value
 	} else {
