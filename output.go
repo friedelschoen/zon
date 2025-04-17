@@ -129,7 +129,7 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 		builddir = sourcedir.value
 	} else {
 		var err error
-		builddir, err = os.MkdirTemp("", "bake-")
+		builddir, err = os.MkdirTemp("", "zon-")
 		if err != nil {
 			return nil, err
 		}
