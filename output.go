@@ -37,7 +37,7 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	}
 
 	impure := false
-	if impureAny, ok := result.values["@impure"]; ok {
+	if impureAny, ok := result.values["impure"]; ok {
 		if impureVal, ok := impureAny.(BooleanExpr); ok {
 			impure = impureVal.value
 		}
@@ -77,42 +77,42 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	var cmdline []string
 	var token Value
 
-	if installAny, ok := result.values["@output"]; ok {
+	if installAny, ok := result.values["output"]; ok {
 		token = installAny
 		install, ok := installAny.(StringValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: @output must be a string", installAny.position())
+			return nil, fmt.Errorf("%s: output must be a string", installAny.position())
 		}
 
 		interpreter := ev.Interpreter
-		if interpreterAny, ok := result.values["@interpreter"]; ok {
+		if interpreterAny, ok := result.values["interpreter"]; ok {
 			if str, ok := interpreterAny.(StringValue); ok {
 				interpreter = str.content
 			} else {
-				return nil, fmt.Errorf("%s: @interpreter must be a string", interpreterAny.position())
+				return nil, fmt.Errorf("%s: interpreter must be a string", interpreterAny.position())
 			}
 		}
 		cmdline = []string{interpreter, "-e", "-c", install.content, "builder"}
-	} else if builderAny, ok := result.values["@builder"]; ok {
+	} else if builderAny, ok := result.values["builder"]; ok {
 		token = builderAny
 		builder, ok := builderAny.(StringValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: @builder must be a string", builderAny.position())
+			return nil, fmt.Errorf("%s: builder must be a string", builderAny.position())
 		}
 		cmdline = []string{builder.content}
 	} else {
-		return nil, fmt.Errorf("%s: missing @output or @builder", o.position())
+		return nil, fmt.Errorf("%s: missing output or builder", o.position())
 	}
 
-	if argsAny, ok := result.values["@args"]; ok {
+	if argsAny, ok := result.values["args"]; ok {
 		args, ok := argsAny.(ArrayValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: @args must be an array", argsAny.position())
+			return nil, fmt.Errorf("%s: args must be an array", argsAny.position())
 		}
 		for _, elem := range args.values[1:] {
 			arg, ok := elem.(StringValue)
 			if !ok {
-				return nil, fmt.Errorf("%s: non-string in @args: %T", elem.position(), elem)
+				return nil, fmt.Errorf("%s: non-string in args: %T", elem.position(), elem)
 			}
 			cmdline = append(cmdline, string(arg.content))
 		}
@@ -121,10 +121,10 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	var builddir string
 	var deletebuilddir bool
 
-	if sourcedirAny, ok := result.values["@source"]; ok {
+	if sourcedirAny, ok := result.values["source"]; ok {
 		sourcedir, ok := sourcedirAny.(PathExpr)
 		if !ok {
-			return nil, fmt.Errorf("%s: @source must be a path", sourcedirAny.position())
+			return nil, fmt.Errorf("%s: source must be a path", sourcedirAny.position())
 		}
 		builddir = sourcedir.value
 	} else {
@@ -144,13 +144,11 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 
 	environ := append(os.Environ(), "out="+outdir)
 	for key, value := range result.values {
-		if key != "" && key[0] != '@' {
-			enc, err := value.encodeEnviron(true)
-			if err != nil {
-				return nil, err
-			}
-			environ = append(environ, key+"="+enc)
+		enc, err := value.encodeEnviron(true)
+		if err != nil {
+			return nil, err
 		}
+		environ = append(environ, key+"="+enc)
 	}
 
 	logpath := path.Join(ev.LogDir, hashstr+".log")

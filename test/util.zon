@@ -1,7 +1,7 @@
 {
     "patch": {
-        "@name": "patch",
-        "@output": ''
+        "name": "patch",
+        "output": ''
             cp -vr . $out
             echo pwd=$PWD out=$out
             cd $out
@@ -11,9 +11,9 @@
         ''
     },
     "fetch": {
-        "@name": "download",
-        "@interpreter": "bash",
-        "@output": ''
+        "name": "download",
+        "interpreter": "bash",
+        "output": ''
             curl -L $url -o $out
             realhash=$(sha256sum $out | cut -d' ' -f1)
             if [ \"$checksum\" != \"$realhash\" ]; then
@@ -22,9 +22,9 @@
         ''
     },
     "unpack": {
-        "@name": "unpack",
-        "@interpreter": "bash",
-        "@output": ''
+        "name": "unpack",
+        "interpreter": "bash",
+        "output": ''
             mkdir source
             if file $archive | grep -q \"gzip compressed\"; then
                 tar -C source -xf $archive
@@ -46,8 +46,8 @@
         ''
     },
     "merge": {
-        "@name": "merge",
-        "@output": ''
+        "name": "merge",
+        "output": ''
             mkdir -p \"$out/$prefix\"
 
             for src in $paths; do

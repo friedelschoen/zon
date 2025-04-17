@@ -3,20 +3,20 @@ let
     util = include ./util.zon
 in output {
     with util.merge,
-    "@name": "merge-dotfiles",
+    "name": "merge-dotfiles",
     "paths": [
         ./dotfiles,
         include ./services.zon,
         include ./apps.zon,
         output {
-            "@name": "bgglenda",
-            "source": output {
+            "name": "bgglenda",
+            "photo": output {
                 with util.fetch,
-                "url": "\(spaceglenda)"
+                "url": spaceglenda
             },
-            "@output": ''
+            "output": ''
                 mkdir -p $out/.config
-                magick convert -resize 12.5% $source $out/.config/bgglenda.png
+                magick convert -resize 12.5% $photo $out/.config/$name.png
             ''
         }
     ]

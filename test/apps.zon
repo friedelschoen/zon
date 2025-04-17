@@ -2,13 +2,13 @@ let
     util = include ./util.zon
 in output {
     with util.merge,
-    "@name": "apps",
+    "name": "apps",
     "prefix": ".local",
     "paths": [
         output {
-            "@source": output {
+            "source": output {
                 with util.patch,
-                "@source": output {
+                "source": output {
                     with util.unpack,
                     "archive": output {
                         with util.fetch,
@@ -27,16 +27,16 @@ in output {
                 ]
             },
             "config": ./configs/dmenu.h,
-            "@name": "dmenu",
-            "@output": ''
+            "name": "dmenu",
+            "output": ''
                 cp $config config.h
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.patch,
-                "@source": output {
+                "source": output {
                     with util.unpack,
                     "archive": output {
                         with util.fetch,
@@ -53,14 +53,14 @@ in output {
                 ]
             },
             "config": ./configs/dwm.h,
-            "@name": "dwm",
-            "@output": ''
+            "name": "dwm",
+            "output": ''
                 cp $config config.h
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.unpack,
                 "archive": output {
                     with util.fetch,
@@ -68,13 +68,13 @@ in output {
                     "checksum": "adb0b13d9631e84010114fa3ef9d4c51f9613afb"
                 }
             },
-            "@name": "gitin",
-            "@output": ''
+            "name": "gitin",
+            "output": ''
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.unpack,
                 "archive": output {
                     with util.fetch,
@@ -82,15 +82,15 @@ in output {
                     "checksum": "f5e3cac864830d73ec52e6261027df12e9247805"
                 }
             },
-            "@name": "pretty-sv",
-            "@output": ''
+            "name": "pretty-sv",
+            "output": ''
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.patch,
-                "@source": output {
+                "source": output {
                     with util.unpack,
                     "archive": output {
                         with util.fetch,
@@ -104,16 +104,16 @@ in output {
                 ]
             },
             "config": ./configs/slstatus.h,
-            "@name": "slstatus",
-            "@output": ''
+            "name": "slstatus",
+            "output": ''
                 cp $config config.h
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.patch,
-                "@source": output {
+                "source": output {
                     with util.unpack,
                     "archive": output {
                         with util.fetch,
@@ -128,14 +128,14 @@ in output {
                 ]
             },
             "config": ./configs/st.h,
-            "@name": "st",
-            "@output": ''
+            "name": "st",
+            "output": ''
                 cp $config config.h
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.unpack,
                 "archive": output {
                     with util.fetch,
@@ -144,16 +144,16 @@ in output {
                 }
             },
             "config": ./configs/stw.h,
-            "@name": "stw",
-            "@output": ''
+            "name": "stw",
+            "output": ''
                 cp $config config.h
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.patch,
-                "@source": output {
+                "source": output {
                     with util.unpack,
                     "archive": output {
                         with util.fetch,
@@ -170,16 +170,16 @@ in output {
                 ]
             },
             "config": ./configs/surf.h,
-            "@name": "surf",
-            "@output": ''
+            "name": "surf",
+            "output": ''
                 cp $config config.h
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.patch,
-                "@source": output {
+                "source": output {
                     with util.unpack,
                     "archive": output {
                         with util.fetch,
@@ -192,14 +192,14 @@ in output {
                 ]
             },
             "config": ./configs/tabbed.h,
-            "@name": "tabbed",
-            "@output": ''
+            "name": "tabbed",
+            "output": ''
                 cp $config config.h
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.unpack,
                 "archive": output {
                     with util.fetch,
@@ -207,14 +207,14 @@ in output {
                     "checksum": "592776a38cc479eb6484dbd37eb8dd88c3ddbc27"
                 }
             },
-            "@name": "textselect",
-            "@output": ''
+            "name": "textselect",
+            "output": ''
                 mkdir -p $out/bin $out/share/man/man1
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": output {
+            "source": output {
                 with util.unpack,
                 "archive": output {
                     with util.fetch,
@@ -222,16 +222,16 @@ in output {
                     "checksum": "7e35a05ee5fd1927efadc2f907356ee1ca8002ed"
                 }
             },
-            "@name": "weakbox",
-            "@output": ''
+            "name": "weakbox",
+            "output": ''
                 mkdir -p $out/bin $out/share/man/man1
                 make PREFIX=$out install
             ''
         },
         output {
-            "@source": ./assets,
-            "@name": "gmicro",
-            "@output": ''
+            "source": ./assets,
+            "name": "gmicro",
+            "output": ''
                 mkdir -p $out/bin
                 ln -sv $PWD/gmicro $out/bin
             ''

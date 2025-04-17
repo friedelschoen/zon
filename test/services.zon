@@ -1,18 +1,17 @@
 let service = {
-    "@name": "service",
-    "@output": [
-        "@multiline",
-        "mkdir -p $out/$name",
-        "if [ $enable -eq 0 ]; then",
-        "  touch $out/$name/down",
-        "fi",
-        "echo \"$run\" > $out/$name/run",
-        "chmod +x $out/$name/run"
-    ]
+    "name": "service",
+    "output": ''
+        mkdir -p $out/$name
+        if [ $enable -eq 0 ]; then
+          touch $out/$name/down
+        fi
+        echo \"$run\" > $out/$name/run
+        chmod +x $out/$name/run
+    ''
 } in output {
     with util.merge,
-    "@include": ./util.zon,
-    "@name": "services",
+    "include": ./util.zon,
+    "name": "services",
     "prefix": ".xservice",
     "paths": 		[
 		output {
