@@ -1,212 +1,111 @@
-# bake - A minimal JSON-based declarative build system
+# zon - _"zon is not json"_
 
-**Bake** is a lightweight, reproducible, and parallel build executor. It builds artifacts based on declarative JSON files and content-addressed caching. Bake is designed to be simple and fast.
-
----
-
-## Features
-
-- Declarative builds using plain JSON
-- Pure and impure build support (content hashing or randomization)
-- Parallel or serial evaluation
-- Content-addressed caching (store by input hash)
-- DOT graph output of dependency relationships
-- Cleanup of orphaned outputs
-- Minimal runtime dependencies (just Go + POSIX shell)
-- Variable resolution, includes, and extensions
-- Inline string interpolation (`{{var}}`)
-- Output selection via result symlink or JSON
+**zon** is a declarative, extensible build tool written in Go. It interprets `.zon` files—JSON-inspired configuration files with support for evaluation, includes, function definitions, and build recipes. It’s designed to be minimal yet powerful, with strong inspiration from tools like Nix and JSON-e, and suitable for building packages, managing dotfiles, or orchestrating complex workflows.
 
 ---
 
-## Quick Example
+## ✨ Features
 
-```json
-{
-  "@name": "hello",
-  "@output": "echo hello > $out"
+- Declarative and expressive syntax: inspired by JSON, with extensions for expressions, interpolation, and functions.
+- Build caching via content-addressable storage.
+- Reproducible output paths, unless explicitly marked `impure`.
+- Parallel and serial evaluation modes.
+- Native support for:
+  - `let/in` bindings,
+  - `include` statements,
+  - `output { ... }` build expressions,
+  - string interpolation and escape sequences.
+- Output as symlinks, JSON, or raw directory paths.
+- Can optionally generate a DOT dependency graph.
+
+---
+
+## 📦 Example
+
+A simple `.zon` file for building suckless tools:
+
+```zon
+let
+  util = include ./util.zon
+in output {
+  with util.merge,
+  "name": "apps",
+  "prefix": ".local",
+  "paths": [
+    output {
+      with util.unpack,
+      "archive": output {
+        with util.fetch,
+        "url": "https://dl.suckless.org/tools/dmenu-5.2.tar.gz",
+        "checksum": "3829528c849db6f903676fe7e6a48f3735505b6d"
+      },
+      "name": "dmenu",
+      "output": ''
+        make PREFIX=$out install
+      ''
+    }
+  ]
 }
 ```
 
-Build it:
+You can run this with:
 
 ```sh
-bake hello.json
+zon apps.zon
 ```
 
-Result:
-
-- Creates a cached directory like `cache/store/5e2c34...`
-- Prints its path
-- Optionally symlinks it as `result`
+This fetches, unpacks, and builds `dmenu`, outputting to a deterministic directory in `cache/store`.
 
 ---
 
-## Installation
-
-Bake requires Go 1.21+.
+## 🔧 Command Line Usage
 
 ```sh
-go build -o bake .
-```
-
-Or install globally:
-
-```sh
-go install github.com/friedelschoen/bake@latest
-```
-
----
-
-## Usage
-
-```sh
-bake [options] file.json [var=value ...]
+zon [options] <file.zon> [key=value ...]
 ```
 
 ### Options
 
-| Flag              | Description                                            |
-| ----------------- | ------------------------------------------------------ |
-| `-cache dir`      | Output directory (default: `cache/store`)              |
-| `-log dir`        | Log directory (default: `cache/log`)                   |
-| `-result name`    | Symlink name (default: `result`)                       |
-| `-no-result`      | Disable result symlink creation                        |
-| `-force`          | Force rebuild even if output exists                    |
-| `-dry`            | Simulate without building                              |
-| `-serial`         | Evaluate objects one-by-one                            |
-| `-interpreter`    | Default shell (default: `sh`)                          |
-| `-no-eval-output` | Skip evaluation of `@output`, return the object itself |
-| `-graph path`     | Output a DOT graph of dependencies                     |
-| `-clean`          | Delete orphaned cached outputs                         |
-| `-json`           | Print final object as formatted JSON                   |
+| Flag             | Description                                           |
+| ---------------- | ----------------------------------------------------- |
+| `-f`, `--force`  | Force rebuilding of all outputs                       |
+| `-d`, `--dry`    | Dry-run: do not execute anything                      |
+| `-s`, `--serial` | Run builders sequentially instead of in parallel      |
+| `-o`, `--output` | Symlink output to given name (default: `result`)      |
+| `--no-result`    | Disable symlink creation                              |
+| `--json`         | Print result as JSON                                  |
+| `-g`, `--clean`  | Clean orphaned outputs in the store                   |
+| `--graph`        | Write DOT graph to specified file                     |
+| `--cache`        | Cache directory (default: `cache/store`)              |
+| `--log`          | Log directory (default: `cache/log`)                  |
+| `--interpreter`  | Interpreter to use for inline scripts (default: `sh`) |
 
 ---
 
-## Concepts
+## 🛠️ Built-in Expressions
 
-### Object Types
-
-Bake supports:
-
-- `ObjectMap` — standard JSON maps with special keys like `@output`, `@define`
-- `ObjectArray` — lists of values, including `@multiline` support
-- `ObjectString` — string values with `@var` and `{{interpolation}}`
-- `ObjectNumber`, `ObjectBoolean` — literal values
-
----
-
-## Special Keys
-
-| Key            | Purpose                                                              |
-| -------------- | -------------------------------------------------------------------- |
-| `@name`        | Human-readable name used in graphs/logs                              |
-| `@output`      | Shell snippet that builds into `$out`                                |
-| `@interpreter` | Optional override for the default shell interpreter                  |
-| `@impure`      | If true, disables hash-based caching (useful for timestamped builds) |
-| `@define`      | Defines scoped variables for expansion                               |
-| `@include`     | Path to another JSON file to merge in                                |
-| `@expand`      | Extend from a named object in scope                                  |
-| `@`            | If a map contains only `@`, unwrap its value as the object           |
+- `output { ... }`: defines a build step. Attributes include:
+  - `"builder"` or `"output"` (script),
+  - `"args"` (array of string args),
+  - `"source"` (working directory),
+  - `"impure"` (disables caching),
+  - custom env vars.
+- `include path`: includes and evaluates another `.zon` file.
+- `let ... in ...`: scoped variable definitions.
+- `with expr, ...`: merges attribute sets (maps).
+- Strings support `"\(expression)"` interpolation.
 
 ---
 
-## Includes and Extensions
+## 🧠 Design
 
-Include files:
-
-```json
-{
-  "@include": "./base.json",
-  "@output": "echo hello > $out"
-}
-```
-
-Extend a defined object:
-
-```json
-{
-  "@define": {
-    "base": {
-      "@name": "base",
-      "@output": "echo base > $out"
-    }
-  },
-  "@expand": "@base"
-}
-```
+- Everything is an expression: there are no statements.
+- Outputs are hashed based on the full input expression unless marked `impure`.
+- Evaluation is lazy but deterministic.
+- Errors include file and position information for debugging.
 
 ---
 
-## Multiline Arrays
+## 📜 License
 
-For multi-line string values:
-
-```json
-["@multiline", "line 1", "line 2", "line 3"]
-```
-
-Expands into one `ObjectString` with newline separators.
-
----
-
-## Environment Variables
-
-Keys starting with `$` are exposed to the shell environment:
-
-```json
-{
-  "$version": "1.2.3",
-  "@output": "echo $version > $out/version"
-}
-```
-
----
-
-## Output Caching
-
-- Deterministic builds are hashed using FNV64
-- Cached outputs are stored in `cache/store/<hash>/`
-- Logs are stored as `cache/log/<hash>.log`
-- Impure builds skip hashing
-
----
-
-## Cleanup
-
-```sh
-bake -clean file.json
-```
-
-Removes all output directories in the cache that were **not part of this build run**. Safe for CI and long-term caching.
-
----
-
-## DOT Graph Output
-
-Generate a visual graph of build dependencies:
-
-```sh
-bake -graph graph.dot file.json
-dot -Tpng graph.dot -o graph.png
-```
-
----
-
-## Example: Full Build Recipe
-
-```json
-{
-  "@name": "build-myapp",
-  "@define": {
-    "src": "./src"
-  },
-  "@output": "cp -r {{src}} $out"
-}
-```
-
----
-
-## License
-
-Zlib Licensed
+Beautiful zlib-license
