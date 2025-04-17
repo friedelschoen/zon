@@ -201,28 +201,7 @@ func (o ArrayExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error)
 		BaseExpr: o.BaseExpr,
 		values:   make([]Value, len(o.values)),
 	}
-	err := parallelResolve(slices.All(o.values), func(i int, v Value) { res.values[i] = v }, scope, ev)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(o.values) > 0 {
-		if head, ok := res.values[0].(StringValue); ok && head.content == "@multiline" {
-			var builder strings.Builder
-			for i, elem := range res.values[1:] {
-				selem, ok := elem.(StringValue)
-				if !ok {
-					return nil, fmt.Errorf("%s: non-string in @multiline-array: %T", elem.position(), elem)
-				}
-				if i > 0 {
-					builder.WriteByte('\n')
-				}
-				builder.WriteString(selem.content)
-			}
-			return StringValue{res.BaseExpr, builder.String()}, nil
-		}
-	}
-	return res, nil
+	return res, parallelResolve(slices.All(o.values), func(i int, v Value) { res.values[i] = v }, scope, ev)
 }
 
 func (obj ArrayExpr) hashValue(w io.Writer) {
