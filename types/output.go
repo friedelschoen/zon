@@ -11,6 +11,18 @@ import (
 	"time"
 )
 
+func GetValue[T Value](resultname string, result MapValue, name string) (ret T, err error) {
+	valueAny, ok := result.values[name]
+	if !ok {
+		return ret, fmt.Errorf("%s: %s has no attribute '%s'", result.Pos(), resultname, name)
+	}
+	value, ok := valueAny.(T)
+	if !ok {
+		return ret, fmt.Errorf("%s: %s attribute '%s' should be a %T, got %T", result.Pos(), resultname, name, ret, valueAny)
+	}
+	return value, nil
+}
+
 type OutputExpr struct {
 	Position
 
@@ -51,13 +63,9 @@ func (obj OutputExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, err
 		hashsum = hashlib.Sum(nil)
 	}
 
-	nameAny, ok := result.values["name"]
-	if !ok {
-		return nil, fmt.Errorf("%s: output requires attribute name", result.Pos())
-	}
-	name, ok := nameAny.(StringValue)
-	if !ok {
-		return nil, fmt.Errorf("%s: output->name must be string", result.Pos())
+	name, err := GetValue[StringValue]("output", result, "name")
+	if err != nil {
+		return nil, err
 	}
 
 	hashstr := fmt.Sprintf("%x-%s", hashsum, name.Content)
@@ -83,37 +91,37 @@ func (obj OutputExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, err
 	var cmdline []string
 	var token Value
 
-	if installAny, ok := result.values["output"]; ok {
-		token = installAny
-		install, ok := installAny.(StringValue)
-		if !ok {
-			return nil, fmt.Errorf("%s: output must be a string", installAny.Pos())
+	if outputAny, ok := result.values["output"]; ok {
+		token = outputAny
+		install, err := GetValue[StringValue]("output", result, "output")
+		if err != nil {
+			return nil, err
 		}
 
-		interpreter := ev.Interpreter
-		if interpreterAny, ok := result.values["interpreter"]; ok {
-			if str, ok := interpreterAny.(StringValue); ok {
-				interpreter = str.Content
-			} else {
-				return nil, fmt.Errorf("%s: interpreter must be a string", interpreterAny.Pos())
+		exec := ev.Interpreter
+		if _, ok := result.values["interpreter"]; ok {
+			execValue, err := GetValue[StringValue]("output", result, "interpreter")
+			if err != nil {
+				return nil, err
 			}
+			exec = execValue.Content
 		}
-		cmdline = []string{interpreter, "-e", "-c", install.Content, "builder"}
+		cmdline = []string{exec, "-e", "-c", install.Content, "builder"}
 	} else if builderAny, ok := result.values["builder"]; ok {
 		token = builderAny
-		builder, ok := builderAny.(StringValue)
-		if !ok {
-			return nil, fmt.Errorf("%s: builder must be a string", builderAny.Pos())
+		builder, err := GetValue[StringValue]("output", result, "builder")
+		if err != nil {
+			return nil, err
 		}
 		cmdline = []string{builder.Content}
 	} else {
 		return nil, fmt.Errorf("%s: missing output or builder", obj.Pos())
 	}
 
-	if argsAny, ok := result.values["args"]; ok {
-		args, ok := argsAny.(ArrayValue)
-		if !ok {
-			return nil, fmt.Errorf("%s: args must be an array", argsAny.Pos())
+	if _, ok := result.values["args"]; ok {
+		args, err := GetValue[ArrayValue]("output", result, "args")
+		if err != nil {
+			return nil, err
 		}
 		for _, elem := range args.Values[1:] {
 			arg, ok := elem.(StringValue)
@@ -127,10 +135,10 @@ func (obj OutputExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, err
 	var builddir string
 	var deletebuilddir bool
 
-	if sourcedirAny, ok := result.values["source"]; ok {
-		sourcedir, ok := sourcedirAny.(PathExpr)
-		if !ok {
-			return nil, fmt.Errorf("%s: source must be a path", sourcedirAny.Pos())
+	if _, ok := result.values["source"]; ok {
+		sourcedir, err := GetValue[PathExpr]("output", result, "source")
+		if err != nil {
+			return nil, err
 		}
 		builddir = sourcedir.Name
 	} else {
