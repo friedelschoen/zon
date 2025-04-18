@@ -193,11 +193,11 @@ func (p *Parser) parseMap() (types.Expression, error) {
 		Position: p.base(),
 	}
 
-	p.s.Token = TokenComma
-	for p.s.Token == TokenComma {
-		if err := p.s.Next(); err != nil {
-			return nil, err
-		}
+	if err := p.expect(TokenLBrace); err != nil {
+		return nil, err
+	}
+
+	for p.s.Token != TokenRBrace {
 		if p.s.Token == TokenWith {
 			if err := p.s.Next(); err != nil {
 				return nil, err
@@ -222,6 +222,9 @@ func (p *Parser) parseMap() (types.Expression, error) {
 			}
 			obj.Exprs = append(obj.Exprs, value)
 		}
+		if err := p.expect(TokenComma); err != nil {
+			break
+		}
 	}
 
 	if err := p.expect(TokenRBrace); err != nil {
@@ -237,11 +240,12 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 		Define:   make(map[string]types.Expression),
 	}
 
-	p.s.Token = TokenComma
-	for p.s.Token == TokenComma {
-		if err := p.s.Next(); err != nil {
-			return nil, err
-		}
+	err := p.expect(TokenLet)
+	if err != nil {
+		return nil, err
+	}
+
+	for p.s.Token != TokenIn {
 		keyStr := p.s.Text()
 		if err := p.expect(TokenIdent); err != nil {
 			return nil, err
@@ -254,9 +258,13 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 			return nil, err
 		}
 		obj.Define[keyStr] = value
+		err = p.expect(TokenComma)
+		if err != nil {
+			break
+		}
 	}
 
-	err := p.expect(TokenIn)
+	err = p.expect(TokenIn)
 	if err != nil {
 		return nil, err
 	}
@@ -274,16 +282,20 @@ func (p *Parser) parseArray() (types.Expression, error) {
 		Position: p.base(),
 	}
 
-	p.s.Token = TokenComma
-	for p.s.Token == TokenComma {
-		if err := p.s.Next(); err != nil {
-			return nil, err
-		}
+	err := p.expect(TokenLBracket)
+	if err != nil {
+		return nil, err
+	}
+
+	for p.s.Token != TokenRBracket {
 		value, err := p.parseValue()
 		if err != nil {
 			return nil, err
 		}
 		obj.Exprs = append(obj.Exprs, value)
+		if err := p.expect(TokenComma); err != nil {
+			break
+		}
 	}
 
 	if err := p.expect(TokenRBracket); err != nil {
