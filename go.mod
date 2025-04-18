@@ -1,4 +1,4 @@
-module github.com/friedelschoen/bake
+module github.com/friedelschoen/zon
 
 go 1.23.4
 

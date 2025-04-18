@@ -1,9 +1,9 @@
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -11,19 +11,15 @@ import (
 	"time"
 )
 
-type Edge [2]string
+type OutputExpr struct {
+	Position
 
-type Evaluator struct {
-	Force        bool
-	DryRun       bool
-	CacheDir     string
-	LogDir       string
-	Serial       bool
-	Interpreter  string
-	NoEvalOutput bool
+	attrs Expression
+}
 
-	Edges   []Edge
-	Outputs []string
+func (obj OutputExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	obj.attrs.hashValue(w)
 }
 
 func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
@@ -43,8 +39,8 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 		}
 	}
 
-	var hashsum []byte
 	hashlib := fnv.New128()
+	var hashsum []byte
 	if impure {
 		hashsum = make([]byte, hashlib.Size())
 		for i := range hashsum {
@@ -54,14 +50,24 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 		o.attrs.hashValue(hashlib)
 		hashsum = hashlib.Sum(nil)
 	}
-	hashstr := hex.EncodeToString(hashsum)
+
+	nameAny, ok := result.values["name"]
+	if !ok {
+		return nil, fmt.Errorf("%s: output requires attribute name", result.position())
+	}
+	name, ok := nameAny.(StringValue)
+	if !ok {
+		return nil, fmt.Errorf("%s: output->name must be string", result.position())
+	}
+
+	hashstr := fmt.Sprintf("%x-%s", hashsum, name.content)
 
 	ev.Outputs = append(ev.Outputs, hashstr)
 
 	cwd, _ := os.Getwd()
 	outdir := path.Join(cwd, ev.CacheDir, hashstr)
 	if _, err := os.Stat(outdir); (ev.DryRun || err == nil) && !ev.Force {
-		return PathExpr{value: outdir}, nil
+		return PathExpr{name: outdir}, nil
 	}
 
 	start := time.Now()
@@ -126,7 +132,7 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 		if !ok {
 			return nil, fmt.Errorf("%s: source must be a path", sourcedirAny.position())
 		}
-		builddir = sourcedir.value
+		builddir = sourcedir.name
 	} else {
 		var err error
 		builddir, err = os.MkdirTemp("", "zon-")
@@ -172,5 +178,5 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	fmt.Fprintf(os.Stderr, "%s (%v)\n", hashstr, dur)
 
 	success = true
-	return PathExpr{value: outdir}, nil
+	return PathExpr{name: outdir}, nil
 }

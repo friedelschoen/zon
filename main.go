@@ -11,27 +11,11 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-func writeDot(filename string, edges []Edge) {
-	dot, err := os.Create(filename)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	defer dot.Close()
-
-	fmt.Fprintf(dot, "digraph {\n")
-	for _, e := range edges {
-		fmt.Fprintf(dot, "\"%s\" -> \"%s\";\n", e[0], e[1])
-	}
-	fmt.Fprintf(dot, "}")
-}
-
 func main() {
 	var (
 		ev         Evaluator
 		resultName string
 		noResult   bool
-		dotName    string
 		jsonOutput bool
 		cleanup    bool
 	)
@@ -42,7 +26,6 @@ func main() {
 	flag.StringVarP(&ev.LogDir, "log", "l", "cache/log", "destination of logs of outputs")
 	flag.StringVarP(&resultName, "output", "o", "result", "name of result-symlink")
 	flag.BoolVar(&noResult, "no-result", false, "disables creation of result-symlink")
-	flag.StringVar(&dotName, "graph", "", "destination of dependency graph")
 	flag.BoolVarP(&ev.Serial, "serial", "s", false, "do not build output asynchronous")
 	flag.StringVar(&ev.Interpreter, "interpreter", "sh", "default interpreter for output")
 	flag.BoolVar(&ev.NoEvalOutput, "no-eval-output", false, "skip evaluation of output")
@@ -66,7 +49,7 @@ func main() {
 	scope := make(map[string]Value)
 	for _, arg := range flag.Args() {
 		if name, value, ok := strings.Cut(arg, "="); ok {
-			scope[name] = StringValue{BaseExpr{filename: "<commandline>"}, value}
+			scope[name] = StringValue{Position{filename: "<commandline>"}, value}
 		} else if filename == "" {
 			filename = arg
 		} else {
@@ -80,7 +63,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ast, err := parseFile(PathExpr{BaseExpr{filename: "<commandline>"}, filename})
+	ast, err := parseFile(PathExpr{Position{filename: "<commandline>"}, filename})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -109,10 +92,6 @@ func main() {
 				os.RemoveAll(path.Join(cwd, ev.CacheDir, entry.Name()))
 			}
 		}
-	}
-
-	if dotName != "" {
-		writeDot(dotName, ev.Edges)
 	}
 
 	if jsonOutput {

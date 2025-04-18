@@ -16,8 +16,8 @@ type Parser struct {
 	filename string
 }
 
-func (p *Parser) base() BaseExpr {
-	return BaseExpr{
+func (p *Parser) base() Position {
+	return Position{
 		filename: p.filename,
 		offset:   p.s.Start,
 		line:     p.s.Linenr,
@@ -43,7 +43,7 @@ func (p *Parser) expect(toks ...Token) error {
 
 func (p *Parser) parseString() (Expression, error) {
 	obj := StringExpr{
-		BaseExpr: p.base(),
+		Position: p.base(),
 	}
 
 	var builder strings.Builder
@@ -139,8 +139,8 @@ func (p *Parser) parseBase() (Expression, error) {
 			p.base(),
 			p.s.Text(),
 		}
-		if obj.value[0] != '/' {
-			obj.value = path.Clean(p.cwd + "/" + obj.value)
+		if obj.name[0] != '/' {
+			obj.name = path.Clean(p.cwd + "/" + obj.name)
 		}
 		if err := p.s.Next(); err != nil {
 			return nil, err
@@ -175,7 +175,7 @@ func (p *Parser) parseValue() (Expression, error) {
 			return nil, p.expect(TokenIdent)
 		}
 		base = AttributeExpr{
-			BaseExpr: p.base(),
+			Position: p.base(),
 			base:     base,
 			name:     p.s.Text(),
 		}
@@ -188,7 +188,7 @@ func (p *Parser) parseValue() (Expression, error) {
 
 func (p *Parser) parseMap() (Expression, error) {
 	obj := MapExpr{
-		BaseExpr: p.base(),
+		Position: p.base(),
 	}
 
 	p.s.Token = TokenComma
@@ -231,7 +231,7 @@ func (p *Parser) parseMap() (Expression, error) {
 
 func (p *Parser) parseDefinition() (Expression, error) {
 	obj := DefineExpr{
-		BaseExpr: p.base(),
+		Position: p.base(),
 		define:   make(map[string]Expression),
 	}
 
@@ -269,7 +269,7 @@ func (p *Parser) parseDefinition() (Expression, error) {
 
 func (p *Parser) parseArray() (Expression, error) {
 	obj := ArrayExpr{
-		BaseExpr: p.base(),
+		Position: p.base(),
 	}
 
 	p.s.Token = TokenComma
@@ -338,9 +338,6 @@ func (p *Parser) parseEnclosed() (Expression, error) {
 	if err != nil {
 		return nil, err
 	}
-	// if err := p.s.Next(); err != nil {
-	// 	return nil, err
-	// }
 	err = p.expect(TokenRParen)
 	if err != nil {
 		return nil, err
@@ -349,19 +346,19 @@ func (p *Parser) parseEnclosed() (Expression, error) {
 }
 
 func parseFile(filename PathExpr) (Expression, error) {
-	file, err := os.Open(filename.value)
+	file, err := os.Open(filename.name)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.value, err)
+		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.name, err)
 	}
 	defer file.Close()
-	abs, _ := filepath.Abs(filename.value)
+	abs, _ := filepath.Abs(filename.name)
 
 	scanner := NewScanner(file)
 	err = scanner.Next()
 	if err != nil {
 		return nil, err
 	}
-	parser := Parser{s: scanner, cwd: path.Dir(abs), filename: filename.value}
+	parser := Parser{s: scanner, cwd: path.Dir(abs), filename: filename.name}
 	val, err := parser.parseValue()
 	if err != nil {
 		return nil, err

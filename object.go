@@ -14,6 +14,18 @@ import (
 	"sync"
 )
 
+type Evaluator struct {
+	Force        bool
+	DryRun       bool
+	CacheDir     string
+	LogDir       string
+	Serial       bool
+	Interpreter  string
+	NoEvalOutput bool
+
+	Outputs []string
+}
+
 /* unresolved value */
 type Expression interface {
 	position() string
@@ -29,51 +41,47 @@ type Value interface {
 	jsonObject() any
 }
 
-type BaseExpr struct {
+type Position struct {
 	filename string
 	line     int
 	offset   int
 }
 
-func (o BaseExpr) String() string {
-	return o.position()
+func (obj Position) String() string {
+	return obj.position()
 }
 
-func (o BaseExpr) position() string {
-	if o.filename == "" {
+func (obj Position) position() string {
+	if obj.filename == "" {
 		return "<unknown>"
 	}
 
-	return fmt.Sprintf("%s:%d:%d", path.Base(o.filename), o.line, o.offset)
-}
-
-func (o BaseExpr) symlink(string) error {
-	return fmt.Errorf("%s: unable to symlink object of type: %T", o.position(), o)
-}
-
-func (obj BaseExpr) encodeEnviron(bool) (string, error) {
-	return "", fmt.Errorf("%s: unable to encode %T", obj.position(), obj)
+	return fmt.Sprintf("%s:%d:%d", path.Base(obj.filename), obj.line, obj.offset)
 }
 
 type MapExpr struct {
-	BaseExpr
+	Position
 
 	extends []Expression
 	expr    []Expression
 }
 
 type MapValue struct {
-	BaseExpr
+	Position
 
 	values map[string]Value
 }
 
-func (o MapValue) jsonObject() any {
+func (obj MapValue) jsonObject() any {
 	result := make(map[string]any)
-	for k, v := range o.values {
+	for k, v := range obj.values {
 		result[k] = v.jsonObject()
 	}
 	return result
+}
+
+func (obj MapValue) symlink(string) error {
+	return fmt.Errorf("%s: unable to symlink object of type: %T", obj.position(), obj)
 }
 
 func parallelResolve[K any](values iter.Seq2[K, Expression], set func(K, Value), scope map[string]Value, ev *Evaluator) error {
@@ -111,15 +119,15 @@ func parallelResolve[K any](values iter.Seq2[K, Expression], set func(K, Value),
 	return errors.Join(errs...)
 }
 
-func (o MapExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	values := make([]Value, len(o.expr))
-	err := parallelResolve(slices.All(o.expr), func(k int, v Value) { values[k] = v }, scope, ev)
+func (obj MapExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	values := make([]Value, len(obj.expr))
+	err := parallelResolve(slices.All(obj.expr), func(k int, v Value) { values[k] = v }, scope, ev)
 	if err != nil {
 		return nil, err
 	}
 
 	res := MapValue{
-		BaseExpr: o.BaseExpr,
+		Position: obj.Position,
 		values:   make(map[string]Value),
 	}
 
@@ -132,14 +140,14 @@ func (o MapExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
 		res.values[keyStr.content] = value
 	}
 
-	for _, extname := range o.extends {
+	for _, extname := range obj.extends {
 		othervalue, err := extname.resolve(scope, ev)
 		if err != nil {
 			return nil, err
 		}
 		otherast, ok := othervalue.(MapValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: unable to extend %T", o.position(), othervalue)
+			return nil, fmt.Errorf("%s: unable to extend %T", obj.position(), othervalue)
 		}
 		maps.Copy(res.values, otherast.values)
 	}
@@ -177,31 +185,31 @@ func (obj MapValue) encodeEnviron(root bool) (string, error) {
 }
 
 type ArrayExpr struct {
-	BaseExpr
+	Position
 
 	values []Expression
 }
 
 type ArrayValue struct {
-	BaseExpr
+	Position
 
 	values []Value
 }
 
-func (o ArrayValue) jsonObject() any {
-	result := make([]any, len(o.values))
-	for i, v := range o.values {
+func (obj ArrayValue) jsonObject() any {
+	result := make([]any, len(obj.values))
+	for i, v := range obj.values {
 		result[i] = v.jsonObject()
 	}
 	return result
 }
 
-func (o ArrayExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+func (obj ArrayExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
 	res := ArrayValue{
-		BaseExpr: o.BaseExpr,
-		values:   make([]Value, len(o.values)),
+		Position: obj.Position,
+		values:   make([]Value, len(obj.values)),
 	}
-	return res, parallelResolve(slices.All(o.values), func(i int, v Value) { res.values[i] = v }, scope, ev)
+	return res, parallelResolve(slices.All(obj.values), func(i int, v Value) { res.values[i] = v }, scope, ev)
 }
 
 func (obj ArrayExpr) hashValue(w io.Writer) {
@@ -229,10 +237,10 @@ func (obj ArrayValue) encodeEnviron(root bool) (string, error) {
 	return builder.String(), nil
 }
 
-func (o ArrayValue) symlink(resname string) error {
+func (obj ArrayValue) symlink(resname string) error {
 	var errs []error
 	if resname != "" {
-		for i, r := range o.values {
+		for i, r := range obj.values {
 			errs = append(errs, r.symlink(fmt.Sprintf("%s-%d", resname, i)))
 		}
 	}
@@ -240,13 +248,13 @@ func (o ArrayValue) symlink(resname string) error {
 }
 
 type StringValue struct {
-	BaseExpr
+	Position
 
 	content string
 }
 
-func (o StringValue) jsonObject() any {
-	return o.content
+func (obj StringValue) jsonObject() any {
+	return obj.content
 }
 
 func (obj StringValue) hashValue(w io.Writer) {
@@ -258,26 +266,19 @@ func (obj StringValue) encodeEnviron(root bool) (string, error) {
 	return obj.content, nil
 }
 
-func (o StringValue) symlink(resname string) error {
-	if resname != "" {
-		if stat, err := os.Lstat(resname); err == nil && (stat.Mode()&os.ModeType) != os.ModeSymlink {
-			return fmt.Errorf("unable to make symlink: exist")
-		}
-		os.Remove(resname)
-		return os.Symlink(o.content, resname)
-	}
-	return nil
+func (obj StringValue) symlink(string) error {
+	return fmt.Errorf("%s: unable to symlink object of type: %T", obj.position(), obj)
 }
 
 type StringExpr struct {
-	BaseExpr
+	Position
 
 	content []string
 	interp  []Expression
 }
 
-func (o StringExpr) jsonObject() any {
-	return o.content
+func (obj StringExpr) jsonObject() any {
+	return obj.content
 }
 
 func (obj StringExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
@@ -295,13 +296,13 @@ func (obj StringExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, err
 		case StringValue:
 			res.WriteString(intp.content)
 		case PathExpr:
-			res.WriteString(intp.value)
+			res.WriteString(intp.name)
 		default:
 			return nil, fmt.Errorf("%s: unable to interpolate %T", obj.position(), intp)
 		}
 	}
 	return StringValue{
-		obj.BaseExpr,
+		obj.Position,
 		res.String(),
 	}, nil
 }
@@ -312,17 +313,17 @@ func (obj StringExpr) hashValue(w io.Writer) {
 }
 
 type NumberExpr struct {
-	BaseExpr
+	Position
 
 	value float64
 }
 
-func (o NumberExpr) jsonObject() any {
-	return o.value
+func (obj NumberExpr) jsonObject() any {
+	return obj.value
 }
 
-func (o NumberExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	return o, nil
+func (obj NumberExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	return obj, nil
 }
 
 func (obj NumberExpr) hashValue(w io.Writer) {
@@ -334,18 +335,22 @@ func (obj NumberExpr) encodeEnviron(root bool) (string, error) {
 	return strconv.FormatFloat(obj.value, 'f', -1, 64), nil
 }
 
+func (obj NumberExpr) symlink(string) error {
+	return fmt.Errorf("%s: unable to symlink object of type: %T", obj.position(), obj)
+}
+
 type BooleanExpr struct {
-	BaseExpr
+	Position
 
 	value bool
 }
 
-func (o BooleanExpr) jsonObject() any {
-	return o.value
+func (obj BooleanExpr) jsonObject() any {
+	return obj.value
 }
 
-func (o BooleanExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	return o, nil
+func (obj BooleanExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	return obj, nil
 }
 
 func (obj BooleanExpr) hashValue(w io.Writer) {
@@ -360,60 +365,56 @@ func (obj BooleanExpr) encodeEnviron(root bool) (string, error) {
 	return "0", nil
 }
 
+func (obj BooleanExpr) symlink(string) error {
+	return fmt.Errorf("%s: unable to symlink object of type: %T", obj.position(), obj)
+}
+
 type PathExpr struct {
-	BaseExpr
-
-	value string
-}
-
-func (o PathExpr) jsonObject() any {
-	return o.value
-}
-
-func (o PathExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	return o, nil
-}
-
-func (obj PathExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
-	fmt.Fprint(w, obj.value)
-}
-
-func (obj PathExpr) encodeEnviron(root bool) (string, error) {
-	return obj.value, nil
-}
-
-type VarExpr struct {
-	BaseExpr
+	Position
 
 	name string
 }
 
-func (o VarExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	val, ok := scope[o.name]
+func (obj PathExpr) jsonObject() any {
+	return obj.name
+}
+
+func (obj PathExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	return obj, nil
+}
+
+func (obj PathExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprint(w, obj.name)
+}
+
+func (obj PathExpr) encodeEnviron(root bool) (string, error) {
+	return obj.name, nil
+}
+
+func (obj PathExpr) symlink(resname string) error {
+	if resname != "" {
+		if stat, err := os.Lstat(resname); err == nil && (stat.Mode()&os.ModeType) != os.ModeSymlink {
+			return fmt.Errorf("unable to make symlink: exist")
+		}
+		os.Remove(resname)
+		return os.Symlink(obj.name, resname)
+	}
+	return nil
+}
+
+type VarExpr struct {
+	Position
+
+	name string
+}
+
+func (obj VarExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	val, ok := scope[obj.name]
 	if !ok {
-		return nil, fmt.Errorf("%s: not in scope: %s", o.position(), o.name)
+		return nil, fmt.Errorf("%s: not in scope: %s", obj.position(), obj.name)
 	}
 	return val, nil
-	// for _, attr := range o.name[1:] {
-	// 	val, err := val.resolve(scope, ev)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	switch obj := val.(type) {
-	// 	case MapExpr:
-	// 		val, ok = obj.values[attr]
-	// 		if !ok {
-	// 			return nil, fmt.Errorf("%s: map has no attribute %s", o.position(), attr)
-	// 		}
-	// 		val, err = val.resolve(scope, ev)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-	// 	default:
-	// 		return nil, fmt.Errorf("%s: %T has no attributes", o.position(), obj)
-	// 	}
-	// }
 }
 
 func (obj VarExpr) hashValue(w io.Writer) {
@@ -422,26 +423,26 @@ func (obj VarExpr) hashValue(w io.Writer) {
 }
 
 type AttributeExpr struct {
-	BaseExpr
+	Position
 
 	base Expression
 	name string
 }
 
-func (o AttributeExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	val, err := o.base.resolve(scope, ev)
+func (obj AttributeExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	val, err := obj.base.resolve(scope, ev)
 	if err != nil {
 		return nil, err
 	}
-	switch obj := val.(type) {
+	switch mapval := val.(type) {
 	case MapValue:
-		val, ok := obj.values[o.name]
+		val, ok := mapval.values[obj.name]
 		if !ok {
-			return nil, fmt.Errorf("%s: map has no attribute %s", o.position(), o.name)
+			return nil, fmt.Errorf("%s: map has no attribute %s", mapval.position(), obj.name)
 		}
 		return val, nil
 	default:
-		return nil, fmt.Errorf("%s: %T has no attributes", o.position(), obj)
+		return nil, fmt.Errorf("%s: %T has no attributes", mapval.position(), mapval)
 	}
 }
 
@@ -451,19 +452,19 @@ func (obj AttributeExpr) hashValue(w io.Writer) {
 }
 
 type IncludeExpr struct {
-	BaseExpr
+	Position
 
 	name Expression
 }
 
-func (o IncludeExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	pathAny, err := o.name.resolve(scope, ev)
+func (obj IncludeExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	pathAny, err := obj.name.resolve(scope, ev)
 	if err != nil {
 		return nil, err
 	}
 	path, ok := pathAny.(PathExpr)
 	if !ok {
-		return nil, fmt.Errorf("%s: unable to include non-path: %T", o.position(), path)
+		return nil, fmt.Errorf("%s: unable to include non-path: %T", obj.position(), path)
 	}
 	expr, err := parseFile(path)
 	if err != nil {
@@ -478,40 +479,29 @@ func (obj IncludeExpr) hashValue(w io.Writer) {
 }
 
 type DefineExpr struct {
-	BaseExpr
+	Position
 
 	define map[string]Expression
 	value  Expression
 }
 
-func (o DefineExpr) jsonObject() any {
+func (obj DefineExpr) jsonObject() any {
 	return nil
 }
 
-func (o DefineExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+func (obj DefineExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
 	newscope := maps.Clone(scope)
 	var err error
-	for k, v := range o.define {
+	for k, v := range obj.define {
 		newscope[k], err = v.resolve(scope, ev)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return o.value.resolve(newscope, ev)
+	return obj.value.resolve(newscope, ev)
 }
 
 func (obj DefineExpr) hashValue(w io.Writer) {
 	fmt.Fprintf(w, "%T", obj)
 	obj.value.hashValue(w)
-}
-
-type OutputExpr struct {
-	BaseExpr
-
-	attrs Expression
-}
-
-func (obj OutputExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
-	obj.attrs.hashValue(w)
 }
