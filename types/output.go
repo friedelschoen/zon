@@ -1,4 +1,4 @@
-package main
+package types
 
 import (
 	"fmt"
@@ -14,28 +14,28 @@ import (
 type OutputExpr struct {
 	Position
 
-	attrs Expression
+	Attrs Expression
 }
 
 func (obj OutputExpr) hashValue(w io.Writer) {
 	fmt.Fprintf(w, "%T", obj)
-	obj.attrs.hashValue(w)
+	obj.Attrs.hashValue(w)
 }
 
-func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	attrsAny, err := o.attrs.resolve(scope, ev)
+func (obj OutputExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+	attrsAny, err := obj.Attrs.Resolve(scope, ev)
 	if err != nil {
 		return nil, err
 	}
 	result, ok := attrsAny.(MapValue)
 	if !ok {
-		return nil, fmt.Errorf("%s: unable to output non-map: %T", o.position(), attrsAny)
+		return nil, fmt.Errorf("%s: unable to output non-map: %T", obj.Pos(), attrsAny)
 	}
 
 	impure := false
 	if impureAny, ok := result.values["impure"]; ok {
 		if impureVal, ok := impureAny.(BooleanExpr); ok {
-			impure = impureVal.value
+			impure = impureVal.Value
 		}
 	}
 
@@ -47,27 +47,27 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 			hashsum[i] = byte(rand.Int())
 		}
 	} else {
-		o.attrs.hashValue(hashlib)
+		obj.Attrs.hashValue(hashlib)
 		hashsum = hashlib.Sum(nil)
 	}
 
 	nameAny, ok := result.values["name"]
 	if !ok {
-		return nil, fmt.Errorf("%s: output requires attribute name", result.position())
+		return nil, fmt.Errorf("%s: output requires attribute name", result.Pos())
 	}
 	name, ok := nameAny.(StringValue)
 	if !ok {
-		return nil, fmt.Errorf("%s: output->name must be string", result.position())
+		return nil, fmt.Errorf("%s: output->name must be string", result.Pos())
 	}
 
-	hashstr := fmt.Sprintf("%x-%s", hashsum, name.content)
+	hashstr := fmt.Sprintf("%x-%s", hashsum, name.Content)
 
 	ev.Outputs = append(ev.Outputs, hashstr)
 
 	cwd, _ := os.Getwd()
 	outdir := path.Join(cwd, ev.CacheDir, hashstr)
 	if _, err := os.Stat(outdir); (ev.DryRun || err == nil) && !ev.Force {
-		return PathExpr{name: outdir}, nil
+		return PathExpr{Name: outdir}, nil
 	}
 
 	start := time.Now()
@@ -87,40 +87,40 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 		token = installAny
 		install, ok := installAny.(StringValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: output must be a string", installAny.position())
+			return nil, fmt.Errorf("%s: output must be a string", installAny.Pos())
 		}
 
 		interpreter := ev.Interpreter
 		if interpreterAny, ok := result.values["interpreter"]; ok {
 			if str, ok := interpreterAny.(StringValue); ok {
-				interpreter = str.content
+				interpreter = str.Content
 			} else {
-				return nil, fmt.Errorf("%s: interpreter must be a string", interpreterAny.position())
+				return nil, fmt.Errorf("%s: interpreter must be a string", interpreterAny.Pos())
 			}
 		}
-		cmdline = []string{interpreter, "-e", "-c", install.content, "builder"}
+		cmdline = []string{interpreter, "-e", "-c", install.Content, "builder"}
 	} else if builderAny, ok := result.values["builder"]; ok {
 		token = builderAny
 		builder, ok := builderAny.(StringValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: builder must be a string", builderAny.position())
+			return nil, fmt.Errorf("%s: builder must be a string", builderAny.Pos())
 		}
-		cmdline = []string{builder.content}
+		cmdline = []string{builder.Content}
 	} else {
-		return nil, fmt.Errorf("%s: missing output or builder", o.position())
+		return nil, fmt.Errorf("%s: missing output or builder", obj.Pos())
 	}
 
 	if argsAny, ok := result.values["args"]; ok {
 		args, ok := argsAny.(ArrayValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: args must be an array", argsAny.position())
+			return nil, fmt.Errorf("%s: args must be an array", argsAny.Pos())
 		}
-		for _, elem := range args.values[1:] {
+		for _, elem := range args.Values[1:] {
 			arg, ok := elem.(StringValue)
 			if !ok {
-				return nil, fmt.Errorf("%s: non-string in args: %T", elem.position(), elem)
+				return nil, fmt.Errorf("%s: non-string in args: %T", elem.Pos(), elem)
 			}
-			cmdline = append(cmdline, string(arg.content))
+			cmdline = append(cmdline, string(arg.Content))
 		}
 	}
 
@@ -130,9 +130,9 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	if sourcedirAny, ok := result.values["source"]; ok {
 		sourcedir, ok := sourcedirAny.(PathExpr)
 		if !ok {
-			return nil, fmt.Errorf("%s: source must be a path", sourcedirAny.position())
+			return nil, fmt.Errorf("%s: source must be a path", sourcedirAny.Pos())
 		}
-		builddir = sourcedir.name
+		builddir = sourcedir.Name
 	} else {
 		var err error
 		builddir, err = os.MkdirTemp("", "zon-")
@@ -171,12 +171,12 @@ func (o OutputExpr) resolve(scope map[string]Value, ev *Evaluator) (Value, error
 	cmd.Stdout = logfile
 	cmd.Stderr = logfile
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s: building %s failed, for logs look in %s: %w", token.position(), hashstr, logpath, err)
+		return nil, fmt.Errorf("%s: building %s failed, for logs look in %s: %w", token.Pos(), hashstr, logpath, err)
 	}
 
 	dur := time.Since(start).Round(time.Millisecond)
 	fmt.Fprintf(os.Stderr, "%s (%v)\n", hashstr, dur)
 
 	success = true
-	return PathExpr{name: outdir}, nil
+	return PathExpr{Name: outdir}, nil
 }

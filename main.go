@@ -8,17 +8,21 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/friedelschoen/zon/parser"
+	"github.com/friedelschoen/zon/types"
 	flag "github.com/spf13/pflag"
 )
 
 func main() {
 	var (
-		ev         Evaluator
+		ev         types.Evaluator
 		resultName string
 		noResult   bool
 		jsonOutput bool
 		cleanup    bool
 	)
+
+	ev.ParseFile = parser.ParseFile
 
 	flag.BoolVarP(&ev.Force, "force", "f", false, "force building all outputs")
 	flag.BoolVarP(&ev.DryRun, "dry", "d", false, "do not build anything")
@@ -46,10 +50,10 @@ func main() {
 	}
 
 	filename := ""
-	scope := make(map[string]Value)
+	scope := make(map[string]types.Value)
 	for _, arg := range flag.Args() {
 		if name, value, ok := strings.Cut(arg, "="); ok {
-			scope[name] = StringValue{Position{filename: "<commandline>"}, value}
+			scope[name] = types.StringValue{Position: types.Position{Filename: "<commandline>"}, Content: value}
 		} else if filename == "" {
 			filename = arg
 		} else {
@@ -63,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ast, err := parseFile(PathExpr{Position{filename: "<commandline>"}, filename})
+	ast, err := parser.ParseFile(types.PathExpr{Position: types.Position{Filename: "<commandline>"}, Name: filename})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -73,7 +77,7 @@ func main() {
 		os.MkdirAll(ev.CacheDir, 0755)
 		os.MkdirAll(ev.LogDir, 0755)
 	}
-	res, err := ast.resolve(scope, &ev)
+	res, err := ast.Resolve(scope, &ev)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -97,8 +101,8 @@ func main() {
 	if jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "\t")
-		enc.Encode(res.jsonObject())
-	} else if err := res.symlink(resultName); err != nil {
+		enc.Encode(res.JSON())
+	} else if err := res.Link(resultName); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}

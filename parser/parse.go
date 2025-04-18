@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	"fmt"
@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/friedelschoen/zon/types"
 )
 
 type Parser struct {
@@ -16,11 +18,11 @@ type Parser struct {
 	filename string
 }
 
-func (p *Parser) base() Position {
-	return Position{
-		filename: p.filename,
-		offset:   p.s.Start,
-		line:     p.s.Linenr,
+func (p *Parser) base() types.Position {
+	return types.Position{
+		Filename: p.filename,
+		Offset:   p.s.Start,
+		Line:     p.s.Linenr,
 	}
 }
 
@@ -41,8 +43,8 @@ func (p *Parser) expect(toks ...Token) error {
 	return nil
 }
 
-func (p *Parser) parseString() (Expression, error) {
-	obj := StringExpr{
+func (p *Parser) parseString() (types.Expression, error) {
+	obj := types.StringExpr{
 		Position: p.base(),
 	}
 
@@ -83,7 +85,7 @@ func (p *Parser) parseString() (Expression, error) {
 		case TokenStringEnd:
 			goto exit
 		case TokenInterp:
-			obj.content = append(obj.content, builder.String())
+			obj.Content = append(obj.Content, builder.String())
 			builder.Reset()
 			if err := p.s.Next(); err != nil {
 				return nil, err
@@ -92,7 +94,7 @@ func (p *Parser) parseString() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			obj.interp = append(obj.interp, intp)
+			obj.Interp = append(obj.Interp, intp)
 		default:
 			err := p.expect(TokenStringChar, TokenStringEnd, TokenInterp)
 			return nil, err
@@ -103,12 +105,12 @@ exit:
 		return nil, err
 	}
 
-	obj.content = append(obj.content, builder.String())
-	obj.interp = append(obj.interp, nil)
+	obj.Content = append(obj.Content, builder.String())
+	obj.Interp = append(obj.Interp, nil)
 	return obj, nil
 }
 
-func (p *Parser) parseBase() (Expression, error) {
+func (p *Parser) parseBase() (types.Expression, error) {
 	switch p.s.Token {
 	case TokenLBrace:
 		return p.parseMap()
@@ -126,30 +128,30 @@ func (p *Parser) parseBase() (Expression, error) {
 		return p.parseEnclosed()
 	case TokenInteger:
 		val, _ := strconv.ParseFloat(p.s.Text(), 64)
-		obj := NumberExpr{
-			p.base(),
-			val,
+		obj := types.NumberExpr{
+			Position: p.base(),
+			Value:    val,
 		}
 		if err := p.s.Next(); err != nil {
 			return nil, err
 		}
 		return obj, nil
 	case TokenPath:
-		obj := PathExpr{
-			p.base(),
-			p.s.Text(),
+		obj := types.PathExpr{
+			Position: p.base(),
+			Name:     p.s.Text(),
 		}
-		if obj.name[0] != '/' {
-			obj.name = path.Clean(p.cwd + "/" + obj.name)
+		if obj.Name[0] != '/' {
+			obj.Name = path.Clean(p.cwd + "/" + obj.Name)
 		}
 		if err := p.s.Next(); err != nil {
 			return nil, err
 		}
 		return obj, nil
 	case TokenTrue, TokenFalse:
-		obj := BooleanExpr{
-			p.base(),
-			p.s.Token == TokenTrue,
+		obj := types.BooleanExpr{
+			Position: p.base(),
+			Value:    p.s.Token == TokenTrue,
 		}
 		if err := p.s.Next(); err != nil {
 			return nil, err
@@ -158,10 +160,10 @@ func (p *Parser) parseBase() (Expression, error) {
 	case TokenLet:
 		return p.parseDefinition()
 	}
-	return nil, fmt.Errorf("%s: invalid token: %v", p.base().position(), p.s.Token)
+	return nil, fmt.Errorf("%s: invalid token: %v", p.base(), p.s.Token)
 }
 
-func (p *Parser) parseValue() (Expression, error) {
+func (p *Parser) parseValue() (types.Expression, error) {
 	base, err := p.parseBase()
 	if err != nil {
 		return nil, err
@@ -174,10 +176,10 @@ func (p *Parser) parseValue() (Expression, error) {
 		if p.s.Token != TokenIdent {
 			return nil, p.expect(TokenIdent)
 		}
-		base = AttributeExpr{
+		base = types.AttributeExpr{
 			Position: p.base(),
-			base:     base,
-			name:     p.s.Text(),
+			Base:     base,
+			Name:     p.s.Text(),
 		}
 		if err := p.s.Next(); err != nil {
 			return nil, err
@@ -186,8 +188,8 @@ func (p *Parser) parseValue() (Expression, error) {
 	return base, nil
 }
 
-func (p *Parser) parseMap() (Expression, error) {
-	obj := MapExpr{
+func (p *Parser) parseMap() (types.Expression, error) {
+	obj := types.MapExpr{
 		Position: p.base(),
 	}
 
@@ -204,13 +206,13 @@ func (p *Parser) parseMap() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			obj.extends = append(obj.extends, val)
+			obj.Extends = append(obj.Extends, val)
 		} else {
 			key, err := p.parseValue()
 			if err != nil {
 				return nil, err
 			}
-			obj.expr = append(obj.expr, key)
+			obj.Exprs = append(obj.Exprs, key)
 			if err := p.expect(TokenColon); err != nil {
 				return nil, err
 			}
@@ -218,7 +220,7 @@ func (p *Parser) parseMap() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			obj.expr = append(obj.expr, value)
+			obj.Exprs = append(obj.Exprs, value)
 		}
 	}
 
@@ -229,10 +231,10 @@ func (p *Parser) parseMap() (Expression, error) {
 	return obj, nil
 }
 
-func (p *Parser) parseDefinition() (Expression, error) {
-	obj := DefineExpr{
+func (p *Parser) parseDefinition() (types.Expression, error) {
+	obj := types.DefineExpr{
 		Position: p.base(),
-		define:   make(map[string]Expression),
+		Define:   make(map[string]types.Expression),
 	}
 
 	p.s.Token = TokenComma
@@ -251,7 +253,7 @@ func (p *Parser) parseDefinition() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		obj.define[keyStr] = value
+		obj.Define[keyStr] = value
 	}
 
 	err := p.expect(TokenIn)
@@ -259,7 +261,7 @@ func (p *Parser) parseDefinition() (Expression, error) {
 		return nil, err
 	}
 
-	obj.value, err = p.parseValue()
+	obj.Expr, err = p.parseValue()
 	if err != nil {
 		return nil, err
 	}
@@ -267,8 +269,8 @@ func (p *Parser) parseDefinition() (Expression, error) {
 	return obj, nil
 }
 
-func (p *Parser) parseArray() (Expression, error) {
-	obj := ArrayExpr{
+func (p *Parser) parseArray() (types.Expression, error) {
+	obj := types.ArrayExpr{
 		Position: p.base(),
 	}
 
@@ -281,7 +283,7 @@ func (p *Parser) parseArray() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		obj.values = append(obj.values, value)
+		obj.Exprs = append(obj.Exprs, value)
 	}
 
 	if err := p.expect(TokenRBracket); err != nil {
@@ -291,10 +293,10 @@ func (p *Parser) parseArray() (Expression, error) {
 	return obj, nil
 }
 
-func (p *Parser) parseVar() (Expression, error) {
-	obj := VarExpr{
-		p.base(),
-		p.s.Text(),
+func (p *Parser) parseVar() (types.Expression, error) {
+	obj := types.VarExpr{
+		Position: p.base(),
+		Name:     p.s.Text(),
 	}
 
 	if err := p.s.Next(); err != nil {
@@ -304,33 +306,33 @@ func (p *Parser) parseVar() (Expression, error) {
 	return obj, nil
 }
 
-func (p *Parser) parseInclude() (Expression, error) {
-	obj := IncludeExpr{
-		p.base(),
-		nil,
+func (p *Parser) parseInclude() (types.Expression, error) {
+	obj := types.IncludeExpr{
+		Position: p.base(),
+		Name:     nil,
 	}
 	if err := p.s.Next(); err != nil {
 		return nil, err
 	}
 	var err error
-	obj.name, err = p.parseValue()
+	obj.Name, err = p.parseValue()
 	return obj, err
 }
 
-func (p *Parser) parseOutput() (Expression, error) {
-	obj := OutputExpr{
-		p.base(),
-		nil,
+func (p *Parser) parseOutput() (types.Expression, error) {
+	obj := types.OutputExpr{
+		Position: p.base(),
+		Attrs:    nil,
 	}
 	if err := p.s.Next(); err != nil {
 		return nil, err
 	}
 	var err error
-	obj.attrs, err = p.parseValue()
+	obj.Attrs, err = p.parseValue()
 	return obj, err
 }
 
-func (p *Parser) parseEnclosed() (Expression, error) {
+func (p *Parser) parseEnclosed() (types.Expression, error) {
 	if err := p.s.Next(); err != nil {
 		return nil, err
 	}
@@ -345,20 +347,20 @@ func (p *Parser) parseEnclosed() (Expression, error) {
 	return obj, err
 }
 
-func parseFile(filename PathExpr) (Expression, error) {
-	file, err := os.Open(filename.name)
+func ParseFile(filename types.PathExpr) (types.Expression, error) {
+	file, err := os.Open(filename.Name)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.position(), filename.name, err)
+		return nil, fmt.Errorf("%s: failed to open file %s: %w", filename.Pos(), filename.Name, err)
 	}
 	defer file.Close()
-	abs, _ := filepath.Abs(filename.name)
+	abs, _ := filepath.Abs(filename.Name)
 
 	scanner := NewScanner(file)
 	err = scanner.Next()
 	if err != nil {
 		return nil, err
 	}
-	parser := Parser{s: scanner, cwd: path.Dir(abs), filename: filename.name}
+	parser := Parser{s: scanner, cwd: path.Dir(abs), filename: filename.Name}
 	val, err := parser.parseValue()
 	if err != nil {
 		return nil, err
