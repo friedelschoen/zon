@@ -93,6 +93,7 @@ const (
 	ModeInterp
 	ModeIdent
 	ModePath
+	ModeComment
 )
 
 type Scanner struct {
@@ -178,6 +179,12 @@ func (s *Scanner) Next() error {
 				return nil
 			case unicode.IsSpace(chr):
 				s.consume(1)
+			case strings.HasPrefix(string(s.runes), "//"):
+				/* consume rest of the line */
+				s.runes = s.runes[:0]
+			case strings.HasPrefix(string(s.runes), "/*"):
+				s.consume(2)
+				s.push(ModeComment)
 			case isPathPrefix(s.runes):
 				s.push(ModePath)
 				s.Start = s.End
@@ -310,6 +317,18 @@ func (s *Scanner) Next() error {
 				s.Token = TokenPath
 				s.pop()
 				return nil
+			}
+		case ModeComment:
+			if len(s.runes) == 0 {
+				s.pop()
+			}
+			cons := strings.Index(string(s.runes), "*/")
+			if cons == -1 {
+				/* no comment end yet */
+				s.runes = s.runes[:0]
+			} else {
+				s.consume(cons + 2)
+				s.pop()
 			}
 		}
 	}
