@@ -22,8 +22,6 @@ func main() {
 		cleanup    bool
 	)
 
-	ev.ParseFile = parser.ParseFile
-
 	flag.BoolVarP(&ev.Force, "force", "f", false, "force building all outputs")
 	flag.BoolVarP(&ev.DryRun, "dry", "d", false, "do not build anything")
 	flag.StringVarP(&ev.CacheDir, "cache", "c", "cache/store", "destination of outputs")
@@ -77,11 +75,17 @@ func main() {
 		os.MkdirAll(ev.CacheDir, 0755)
 		os.MkdirAll(ev.LogDir, 0755)
 	}
+
+	ev.ParseFile = parser.ParseFile
+	ev.Start(5)
+
 	res, err := ast.Resolve(scope, &ev)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+
+	ev.Stop()
 
 	if cleanup {
 		cwd, _ := os.Getwd()
