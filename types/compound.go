@@ -9,10 +9,11 @@ import (
 	"sync"
 )
 
-func parallelResolve(exprs []Expression, scope map[string]Value, ev *Evaluator) ([]Value, error) {
+func parallelResolve(exprs []Expression, scope map[string]Value, ev *Evaluator) ([]Value, []PathExpr, error) {
 	var (
 		values = make([]Value, len(exprs))
 		errs   = make([]error, len(exprs))
+		deps   = make([]PathExpr, 0, len(exprs))
 	)
 	if !ev.Serial {
 		var (
@@ -23,10 +24,11 @@ func parallelResolve(exprs []Expression, scope map[string]Value, ev *Evaluator) 
 		for i, v := range exprs {
 			wg.Add(1)
 			go func() {
-				val, err := v.Resolve(scope, ev)
+				val, paths, err := v.Resolve(scope, ev)
 				mu.Lock()
 				values[i] = val
 				errs[i] = err
+				deps = append(deps, paths...)
 				mu.Unlock()
 				wg.Done()
 			}()
@@ -35,12 +37,13 @@ func parallelResolve(exprs []Expression, scope map[string]Value, ev *Evaluator) 
 		wg.Wait()
 	} else {
 		for i, v := range exprs {
-			val, err := v.Resolve(scope, ev)
+			val, paths, err := v.Resolve(scope, ev)
 			values[i] = val
 			errs[i] = err
+			deps = append(deps, paths...)
 		}
 	}
-	return values, errors.Join(errs...)
+	return values, deps, errors.Join(errs...)
 }
 
 type MapExpr struct {
@@ -50,10 +53,10 @@ type MapExpr struct {
 	Exprs   []Expression
 }
 
-func (obj MapExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	values, err := parallelResolve(obj.Exprs, scope, ev)
+func (obj MapExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+	values, deps, err := parallelResolve(obj.Exprs, scope, ev)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	res := MapValue{
@@ -65,24 +68,25 @@ func (obj MapExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error)
 		key, value := values[i], values[i+1]
 		keyStr, ok := key.(StringValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: expected string-key, got %T", key.Pos(), key)
+			return nil, nil, fmt.Errorf("%s: expected string-key, got %T", key.Pos(), key)
 		}
 		res.values[keyStr.Content] = value
 	}
 
 	for _, extname := range obj.Extends {
-		othervalue, err := extname.Resolve(scope, ev)
+		othervalue, otherdeps, err := extname.Resolve(scope, ev)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		otherast, ok := othervalue.(MapValue)
 		if !ok {
-			return nil, fmt.Errorf("%s: unable to extend %T", obj.Pos(), othervalue)
+			return nil, nil, fmt.Errorf("%s: unable to extend %T", obj.Pos(), othervalue)
 		}
 		maps.Copy(res.values, otherast.values)
+		deps = append(deps, otherdeps...)
 	}
 
-	return res, nil
+	return res, deps, nil
 }
 
 func (obj MapExpr) hashValue(w io.Writer) {
@@ -152,13 +156,14 @@ func (obj ArrayValue) JSON() any {
 	return result
 }
 
-func (obj ArrayExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+func (obj ArrayExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
 	res := ArrayValue{
 		Position: obj.Position,
 	}
 	var err error
-	res.Values, err = parallelResolve(obj.Exprs, scope, ev)
-	return res, err
+	var deps []PathExpr
+	res.Values, deps, err = parallelResolve(obj.Exprs, scope, ev)
+	return res, deps, err
 }
 
 func (obj ArrayExpr) hashValue(w io.Writer) {

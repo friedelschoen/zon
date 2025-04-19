@@ -13,6 +13,14 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+func PrintPathTree(p types.PathExpr, indent string) {
+	fmt.Println(indent + "- " + path.Base(p.Name))
+
+	for _, dep := range p.Depends {
+		PrintPathTree(dep, indent+"  ")
+	}
+}
+
 func main() {
 	var (
 		ev         types.Evaluator
@@ -77,10 +85,14 @@ func main() {
 		os.MkdirAll(ev.CacheDir, 0755)
 		os.MkdirAll(ev.LogDir, 0755)
 	}
-	res, err := ast.Resolve(scope, &ev)
+	res, deps, err := ast.Resolve(scope, &ev)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
+	}
+
+	for _, d := range deps {
+		PrintPathTree(d, "")
 	}
 
 	if cleanup {

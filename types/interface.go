@@ -24,7 +24,7 @@ type Evaluator struct {
 type Expression interface {
 	Pos() string
 	hashValue(w io.Writer)
-	Resolve(scope map[string]Value, ev *Evaluator) (Value, error)
+	Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error)
 }
 
 /* resolved value */

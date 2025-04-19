@@ -37,30 +37,32 @@ func (obj StringExpr) JSON() any {
 	return obj.Content
 }
 
-func (obj StringExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+func (obj StringExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
 	var res strings.Builder
+	var deps []PathExpr
 	for i := range obj.Content {
 		res.WriteString(obj.Content[i])
 		if obj.Interp[i] == nil {
 			continue
 		}
-		intp, err := obj.Interp[i].Resolve(scope, ev)
+		intp, paths, err := obj.Interp[i].Resolve(scope, ev)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		deps = append(deps, paths...)
 		switch intp := intp.(type) {
 		case StringValue:
 			res.WriteString(intp.Content)
 		case PathExpr:
 			res.WriteString(intp.Name)
 		default:
-			return nil, fmt.Errorf("%s: unable to interpolate %T", obj.Pos(), intp)
+			return nil, nil, fmt.Errorf("%s: unable to interpolate %T", obj.Pos(), intp)
 		}
 	}
 	return StringValue{
 		obj.Position,
 		res.String(),
-	}, nil
+	}, deps, nil
 }
 
 func (obj StringExpr) hashValue(w io.Writer) {
@@ -78,8 +80,8 @@ func (obj NumberExpr) JSON() any {
 	return obj.Value
 }
 
-func (obj NumberExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	return obj, nil
+func (obj NumberExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+	return obj, nil, nil
 }
 
 func (obj NumberExpr) hashValue(w io.Writer) {
@@ -105,8 +107,8 @@ func (obj BooleanExpr) JSON() any {
 	return obj.Value
 }
 
-func (obj BooleanExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	return obj, nil
+func (obj BooleanExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+	return obj, nil, nil
 }
 
 func (obj BooleanExpr) hashValue(w io.Writer) {
@@ -128,15 +130,16 @@ func (obj BooleanExpr) Link(string) error {
 type PathExpr struct {
 	Position
 
-	Name string
+	Name    string
+	Depends []PathExpr
 }
 
 func (obj PathExpr) JSON() any {
 	return obj.Name
 }
 
-func (obj PathExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	return obj, nil
+func (obj PathExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+	return obj, nil, nil
 }
 
 func (obj PathExpr) hashValue(w io.Writer) {

@@ -11,12 +11,12 @@ type VarExpr struct {
 	Name string
 }
 
-func (obj VarExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
+func (obj VarExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
 	val, ok := scope[obj.Name]
 	if !ok {
-		return nil, fmt.Errorf("%s: not in scope: %s", obj.Pos(), obj.Name)
+		return nil, nil, fmt.Errorf("%s: not in scope: %s", obj.Pos(), obj.Name)
 	}
-	return val, nil
+	return val, nil, nil
 }
 
 func (obj VarExpr) hashValue(w io.Writer) {
@@ -31,20 +31,20 @@ type AttributeExpr struct {
 	Name string
 }
 
-func (obj AttributeExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	val, err := obj.Base.Resolve(scope, ev)
+func (obj AttributeExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+	val, deps, err := obj.Base.Resolve(scope, ev)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	switch mapval := val.(type) {
 	case MapValue:
 		val, ok := mapval.values[obj.Name]
 		if !ok {
-			return nil, fmt.Errorf("%s: map has no attribute %s", mapval.Pos(), obj.Name)
+			return nil, nil, fmt.Errorf("%s: map has no attribute %s", mapval.Pos(), obj.Name)
 		}
-		return val, nil
+		return val, deps, nil
 	default:
-		return nil, fmt.Errorf("%s: %T has no attributes", mapval.Pos(), mapval)
+		return nil, nil, fmt.Errorf("%s: %T has no attributes", mapval.Pos(), mapval)
 	}
 }
 
