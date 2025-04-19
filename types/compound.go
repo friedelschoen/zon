@@ -4,30 +4,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 )
 
-func parallelResolve[K any](values iter.Seq2[K, Expression], set func(K, Value), scope map[string]Value, ev *Evaluator) error {
-	var errs []error
+func parallelResolve(exprs []Expression, scope map[string]Value, ev *Evaluator) ([]Value, error) {
+	var (
+		values = make([]Value, len(exprs))
+		errs   = make([]error, len(exprs))
+	)
 	if !ev.Serial {
 		var (
 			wg sync.WaitGroup
 			mu sync.Mutex
 		)
 		mu.Lock()
-		for k, v := range values {
+		for i, v := range exprs {
 			wg.Add(1)
 			go func() {
 				val, err := v.Resolve(scope, ev)
 				mu.Lock()
-				if err == nil {
-					set(k, val)
-				}
-				errs = append(errs, err)
+				values[i] = val
+				errs[i] = err
 				mu.Unlock()
 				wg.Done()
 			}()
@@ -35,15 +34,13 @@ func parallelResolve[K any](values iter.Seq2[K, Expression], set func(K, Value),
 		mu.Unlock()
 		wg.Wait()
 	} else {
-		for k, v := range values {
+		for i, v := range exprs {
 			val, err := v.Resolve(scope, ev)
-			if err == nil {
-				set(k, val)
-			}
-			errs = append(errs, err)
+			values[i] = val
+			errs[i] = err
 		}
 	}
-	return errors.Join(errs...)
+	return values, errors.Join(errs...)
 }
 
 type MapExpr struct {
@@ -54,8 +51,7 @@ type MapExpr struct {
 }
 
 func (obj MapExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
-	values := make([]Value, len(obj.Exprs))
-	err := parallelResolve(slices.All(obj.Exprs), func(k int, v Value) { values[k] = v }, scope, ev)
+	values, err := parallelResolve(obj.Exprs, scope, ev)
 	if err != nil {
 		return nil, err
 	}
@@ -159,9 +155,10 @@ func (obj ArrayValue) JSON() any {
 func (obj ArrayExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, error) {
 	res := ArrayValue{
 		Position: obj.Position,
-		Values:   make([]Value, len(obj.Exprs)),
 	}
-	return res, parallelResolve(slices.All(obj.Exprs), func(i int, v Value) { res.Values[i] = v }, scope, ev)
+	var err error
+	res.Values, err = parallelResolve(obj.Exprs, scope, ev)
+	return res, err
 }
 
 func (obj ArrayExpr) hashValue(w io.Writer) {
