@@ -58,10 +58,10 @@ func main() {
 	}
 
 	filename := ""
-	scope := make(map[string]types.Value)
+	scope := make(types.Scope)
 	for _, arg := range flag.Args() {
 		if name, value, ok := strings.Cut(arg, "="); ok {
-			scope[name] = types.StringValue{Position: types.Position{Filename: "<commandline>"}, Content: value}
+			scope[name] = types.Variable{Expr: types.StringConstant(value, "<commandline>"), Args: nil, Scope: make(types.Scope)}
 		} else if filename == "" {
 			filename = arg
 		} else {

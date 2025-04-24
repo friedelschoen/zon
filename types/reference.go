@@ -3,20 +3,32 @@ package types
 import (
 	"fmt"
 	"io"
+	"maps"
 )
 
 type VarExpr struct {
 	Position
 
 	Name string
+	Args []Expression
 }
 
-func (obj VarExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
-	val, ok := scope[obj.Name]
+func (obj VarExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
+	expr, ok := scope[obj.Name]
 	if !ok {
 		return nil, nil, fmt.Errorf("%s: not in scope: %s", obj.Pos(), obj.Name)
 	}
-	return val, nil, nil
+	if len(expr.Args) != len(obj.Args) {
+		return nil, nil, fmt.Errorf("%s: variable expecting %d arguments, got %d", obj.Pos(), len(expr.Args), len(obj.Args))
+	}
+	newscope := expr.Scope
+	if len(expr.Args) > 0 {
+		newscope = maps.Clone(newscope)
+		for i, name := range expr.Args {
+			newscope[name] = Variable{obj.Args[i], nil, scope}
+		}
+	}
+	return expr.Expr.Resolve(newscope, ev)
 }
 
 func (obj VarExpr) hashValue(w io.Writer) {
@@ -31,7 +43,7 @@ type AttributeExpr struct {
 	Name string
 }
 
-func (obj AttributeExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj AttributeExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	val, deps, err := obj.Base.Resolve(scope, ev)
 	if err != nil {
 		return nil, nil, err

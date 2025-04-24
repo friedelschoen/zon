@@ -126,7 +126,7 @@ func (p *Parser) parseBase() (types.Expression, error) {
 		return p.parseOutput()
 	case TokenLParen:
 		return p.parseEnclosed()
-	case TokenInteger:
+	case TokenNumber:
 		val, _ := strconv.ParseFloat(p.s.Text(), 64)
 		obj := types.NumberExpr{
 			Position: p.base(),
@@ -237,7 +237,6 @@ func (p *Parser) parseMap() (types.Expression, error) {
 func (p *Parser) parseDefinition() (types.Expression, error) {
 	obj := types.DefineExpr{
 		Position: p.base(),
-		Define:   make(map[string]types.Expression),
 	}
 
 	err := p.expect(TokenLet)
@@ -250,6 +249,19 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 		if err := p.expect(TokenIdent); err != nil {
 			return nil, err
 		}
+		var args []string
+		if p.s.Token == TokenIdent {
+			for p.s.Token != TokenEquals {
+				txt := p.s.Text()
+				if err := p.expect(TokenIdent); err != nil {
+					return nil, err
+				}
+				args = append(args, txt)
+				if err := p.expect(TokenComma); err != nil {
+					break
+				}
+			}
+		}
 		if err := p.expect(TokenEquals); err != nil {
 			return nil, err
 		}
@@ -257,7 +269,7 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		obj.Define[keyStr] = value
+		obj.Define = append(obj.Define, types.Definition{Name: keyStr, Expr: value, Args: args})
 		err = p.expect(TokenComma)
 		if err != nil {
 			break
@@ -310,9 +322,26 @@ func (p *Parser) parseVar() (types.Expression, error) {
 		Position: p.base(),
 		Name:     p.s.Text(),
 	}
-
-	if err := p.s.Next(); err != nil {
+	if err := p.expect(TokenIdent); err != nil {
 		return nil, err
+	}
+	if p.s.Token == TokenLParen {
+		if err := p.s.Next(); err != nil {
+			return nil, err
+		}
+		for p.s.Token != TokenRParen {
+			expr, err := p.parseValue()
+			if err != nil {
+				return nil, err
+			}
+			obj.Args = append(obj.Args, expr)
+			if err := p.expect(TokenComma); err != nil {
+				break
+			}
+		}
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, err
+		}
 	}
 
 	return obj, nil

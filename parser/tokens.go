@@ -18,7 +18,7 @@ const (
 	TokenStringEnd                 /* " */
 	TokenStringChar                /* char */
 	TokenStringEscape              /* \n, \t, ... */
-	TokenInteger                   /* 10 */
+	TokenNumber                    /* 10 */
 	TokenFloat                     /* 10.12 */
 	TokenIdent                     /* identifier123 */
 	TokenTrue                      /* true */
@@ -60,7 +60,7 @@ func (t Token) String() string {
 		return "string-character"
 	case TokenStringEscape:
 		return "string-escape"
-	case TokenInteger:
+	case TokenNumber:
 		return "integer"
 	case TokenFloat:
 		return "float"

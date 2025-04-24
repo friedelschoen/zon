@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -217,6 +218,8 @@ func (s *Scanner) scanMultiString(chr rune) (bool, error) {
 	return true, nil
 }
 
+var numberPattern = regexp.MustCompile(`^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?`)
+
 func (s *Scanner) scanStringEscape(chr rune) (bool, error) {
 	switch chr {
 	case '"', '\'', '\\', 'b', 'f', 'n', 'r', 't', '\n':
@@ -297,6 +300,12 @@ func (s *Scanner) scanRoot(chr rune, mode State) (bool, error) {
 		s.push(StateIdent)
 		s.Start = s.End
 	default:
+		if m := numberPattern.FindStringIndex(string(s.runes)); m != nil {
+			s.Token = TokenNumber
+			s.Start = s.End
+			s.consume(m[1])
+			return false, nil
+		}
 		s.Start = s.End
 		return false, fmt.Errorf("illegal token: `%c`", chr)
 	}

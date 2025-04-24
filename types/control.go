@@ -12,7 +12,7 @@ type IncludeExpr struct {
 	Name Expression
 }
 
-func (obj IncludeExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj IncludeExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	pathAny, deps, err := obj.Name.Resolve(scope, ev)
 	if err != nil {
 		return nil, nil, err
@@ -35,10 +35,16 @@ func (obj IncludeExpr) hashValue(w io.Writer) {
 	fmt.Fprint(w, obj.Name)
 }
 
+type Definition struct {
+	Name string
+	Expr Expression
+	Args []string
+}
+
 type DefineExpr struct {
 	Position
 
-	Define map[string]Expression
+	Define []Definition
 	Expr   Expression
 }
 
@@ -46,21 +52,12 @@ func (obj DefineExpr) JSON() any {
 	return nil
 }
 
-func (obj DefineExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj DefineExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	newscope := maps.Clone(scope)
-	var deps []PathExpr
-	var err error
-	for k, v := range obj.Define {
-		var paths []PathExpr
-		newscope[k], paths, err = v.Resolve(scope, ev)
-		if err != nil {
-			return nil, nil, err
-		}
-		deps = append(deps, paths...)
+	for _, v := range obj.Define {
+		newscope[v.Name] = Variable{v.Expr, v.Args, scope}
 	}
-	val, paths, err := obj.Expr.Resolve(newscope, ev)
-	deps = append(deps, paths...)
-	return val, deps, err
+	return obj.Expr.Resolve(newscope, ev)
 }
 
 func (obj DefineExpr) hashValue(w io.Writer) {

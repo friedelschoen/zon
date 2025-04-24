@@ -20,11 +20,19 @@ type Evaluator struct {
 	Outputs []string
 }
 
+type Variable struct {
+	Expr  Expression
+	Args  []string
+	Scope Scope
+}
+
+type Scope map[string]Variable
+
 /* unresolved value */
 type Expression interface {
 	Pos() string
 	hashValue(w io.Writer)
-	Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error)
+	Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error)
 }
 
 /* resolved value */

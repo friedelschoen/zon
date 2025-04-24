@@ -146,7 +146,7 @@ func (obj OutputExpr) build(result MapValue, outdir string, hashstr string, ev *
 	return nil
 }
 
-func (obj OutputExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj OutputExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	attrsAny, deps, err := obj.Attrs.Resolve(scope, ev)
 	if err != nil {
 		return nil, nil, err

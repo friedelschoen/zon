@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-func parallelResolve(exprs []Expression, scope map[string]Value, ev *Evaluator) ([]Value, []PathExpr, error) {
+func parallelResolve(exprs []Expression, scope Scope, ev *Evaluator) ([]Value, []PathExpr, error) {
 	var (
 		values = make([]Value, len(exprs))
 		errs   = make([]error, len(exprs))
@@ -53,7 +53,7 @@ type MapExpr struct {
 	Exprs   []Expression
 }
 
-func (obj MapExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj MapExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	values, deps, err := parallelResolve(obj.Exprs, scope, ev)
 	if err != nil {
 		return nil, nil, err
@@ -156,7 +156,7 @@ func (obj ArrayValue) JSON() any {
 	return result
 }
 
-func (obj ArrayExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj ArrayExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	res := ArrayValue{
 		Position: obj.Position,
 	}

@@ -37,7 +37,7 @@ func (obj StringExpr) JSON() any {
 	return obj.Content
 }
 
-func (obj StringExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj StringExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	var res strings.Builder
 	var deps []PathExpr
 	for i := range obj.Content {
@@ -70,6 +70,10 @@ func (obj StringExpr) hashValue(w io.Writer) {
 	fmt.Fprint(w, obj.Content)
 }
 
+func StringConstant(content string, origin string) StringExpr {
+	return StringExpr{Position: Position{Filename: origin}, Content: []string{content}, Interp: []Expression{nil}}
+}
+
 type NumberExpr struct {
 	Position
 
@@ -80,7 +84,7 @@ func (obj NumberExpr) JSON() any {
 	return obj.Value
 }
 
-func (obj NumberExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj NumberExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	return obj, nil, nil
 }
 
@@ -107,7 +111,7 @@ func (obj BooleanExpr) JSON() any {
 	return obj.Value
 }
 
-func (obj BooleanExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj BooleanExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	return obj, nil, nil
 }
 
@@ -138,7 +142,7 @@ func (obj PathExpr) JSON() any {
 	return obj.Name
 }
 
-func (obj PathExpr) Resolve(scope map[string]Value, ev *Evaluator) (Value, []PathExpr, error) {
+func (obj PathExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	return obj, nil, nil
 }
 
