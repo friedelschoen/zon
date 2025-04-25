@@ -250,8 +250,11 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 			return nil, err
 		}
 		var args []string
-		if p.s.Token == TokenIdent {
-			for p.s.Token != TokenEquals {
+		if p.s.Token == TokenLParen {
+			if err := p.s.Next(); err != nil {
+				return nil, err
+			}
+			for p.s.Token != TokenRParen {
 				txt := p.s.Text()
 				if err := p.expect(TokenIdent); err != nil {
 					return nil, err
@@ -260,6 +263,9 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 				if err := p.expect(TokenComma); err != nil {
 					break
 				}
+			}
+			if err := p.expect(TokenRParen); err != nil {
+				return nil, err
 			}
 		}
 		if err := p.expect(TokenEquals); err != nil {
