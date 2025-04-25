@@ -22,7 +22,6 @@ type Evaluator struct {
 
 type Variable struct {
 	Expr  Expression
-	Args  []string
 	Scope Scope
 }
 

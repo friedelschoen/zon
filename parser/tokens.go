@@ -33,6 +33,7 @@ const (
 	TokenOutput                    /* output */
 	TokenLParen                    /* ( */
 	TokenRParen                    /* ) */
+	TokenFunction                  /* fn */
 )
 
 func (t Token) String() string {
@@ -97,4 +98,5 @@ var keywords = map[string]Token{
 	"in":      TokenIn,
 	"with":    TokenWith,
 	"output":  TokenOutput,
+	"fn":      TokenFunction,
 }

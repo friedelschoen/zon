@@ -35,16 +35,10 @@ func (obj IncludeExpr) hashValue(w io.Writer) {
 	fmt.Fprint(w, obj.Name)
 }
 
-type Definition struct {
-	Name string
-	Expr Expression
-	Args []string
-}
-
 type DefineExpr struct {
 	Position
 
-	Define []Definition
+	Define map[string]Expression
 	Expr   Expression
 }
 
@@ -54,13 +48,36 @@ func (obj DefineExpr) JSON() any {
 
 func (obj DefineExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	newscope := maps.Clone(scope)
-	for _, v := range obj.Define {
-		newscope[v.Name] = Variable{v.Expr, v.Args, scope}
+	for name, expr := range obj.Define {
+		newscope[name] = Variable{expr, scope}
 	}
 	return obj.Expr.Resolve(newscope, ev)
 }
 
 func (obj DefineExpr) hashValue(w io.Writer) {
 	fmt.Fprintf(w, "%T", obj)
+	obj.Expr.hashValue(w)
+}
+
+type LambdaExpr struct {
+	Position
+
+	Args []string
+	Expr Expression
+}
+
+func (obj LambdaExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
+	return nil, nil, fmt.Errorf("%s: cannot evaluate lambda directly", obj.Pos())
+}
+
+func (obj LambdaExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "fn(")
+	for i, a := range obj.Args {
+		if i > 0 {
+			fmt.Fprint(w, ",")
+		}
+		fmt.Fprint(w, a)
+	}
+	fmt.Fprint(w, ")")
 	obj.Expr.hashValue(w)
 }

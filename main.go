@@ -61,7 +61,7 @@ func main() {
 	scope := make(types.Scope)
 	for _, arg := range flag.Args() {
 		if name, value, ok := strings.Cut(arg, "="); ok {
-			scope[name] = types.Variable{Expr: types.StringConstant(value, "<commandline>"), Args: nil, Scope: make(types.Scope)}
+			scope[name] = types.Variable{Expr: types.StringConstant(value, "<commandline>"), Scope: make(types.Scope)}
 		} else if filename == "" {
 			filename = arg
 		} else {

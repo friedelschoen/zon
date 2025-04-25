@@ -126,6 +126,8 @@ func (p *Parser) parseBase() (types.Expression, error) {
 		return p.parseOutput()
 	case TokenLParen:
 		return p.parseEnclosed()
+	case TokenFunction:
+		return p.parseLambda()
 	case TokenNumber:
 		val, _ := strconv.ParseFloat(p.s.Text(), 64)
 		obj := types.NumberExpr{
@@ -237,6 +239,7 @@ func (p *Parser) parseMap() (types.Expression, error) {
 func (p *Parser) parseDefinition() (types.Expression, error) {
 	obj := types.DefineExpr{
 		Position: p.base(),
+		Define:   make(map[string]types.Expression),
 	}
 
 	err := p.expect(TokenLet)
@@ -249,25 +252,6 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 		if err := p.expect(TokenIdent); err != nil {
 			return nil, err
 		}
-		var args []string
-		if p.s.Token == TokenLParen {
-			if err := p.s.Next(); err != nil {
-				return nil, err
-			}
-			for p.s.Token != TokenRParen {
-				txt := p.s.Text()
-				if err := p.expect(TokenIdent); err != nil {
-					return nil, err
-				}
-				args = append(args, txt)
-				if err := p.expect(TokenComma); err != nil {
-					break
-				}
-			}
-			if err := p.expect(TokenRParen); err != nil {
-				return nil, err
-			}
-		}
 		if err := p.expect(TokenEquals); err != nil {
 			return nil, err
 		}
@@ -275,7 +259,7 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		obj.Define = append(obj.Define, types.Definition{Name: keyStr, Expr: value, Args: args})
+		obj.Define[keyStr] = value
 		err = p.expect(TokenComma)
 		if err != nil {
 			break
@@ -377,6 +361,41 @@ func (p *Parser) parseOutput() (types.Expression, error) {
 	var err error
 	obj.Attrs, err = p.parseValue()
 	return obj, err
+}
+
+func (p *Parser) parseLambda() (types.Expression, error) {
+	obj := types.LambdaExpr{
+		Position: p.base(),
+	}
+	if err := p.expect(TokenFunction); err != nil {
+		return nil, err
+	}
+	if err := p.expect(TokenLParen); err != nil {
+		return nil, err
+	}
+	for p.s.Token != TokenRParen {
+		arg := p.s.Text()
+		if err := p.expect(TokenIdent); err != nil {
+			return nil, err
+		}
+		obj.Args = append(obj.Args, arg)
+		if p.s.Token == TokenComma {
+			if err := p.expect(TokenComma); err != nil {
+				return nil, err
+			}
+		} else {
+			break
+		}
+	}
+	if err := p.expect(TokenRParen); err != nil {
+		return nil, err
+	}
+	body, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	obj.Expr = body
+	return obj, nil
 }
 
 func (p *Parser) parseEnclosed() (types.Expression, error) {

@@ -18,17 +18,21 @@ func (obj VarExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error
 	if !ok {
 		return nil, nil, fmt.Errorf("%s: not in scope: %s", obj.Pos(), obj.Name)
 	}
-	if len(expr.Args) != len(obj.Args) {
-		return nil, nil, fmt.Errorf("%s: variable expecting %d arguments, got %d", obj.Pos(), len(expr.Args), len(obj.Args))
+	lambda, ok := expr.Expr.(LambdaExpr)
+	if !ok {
+		return expr.Expr.Resolve(expr.Scope, ev) // normal variable
+	}
+	if len(lambda.Args) != len(obj.Args) {
+		return nil, nil, fmt.Errorf("%s: variable expecting %d arguments, got %d", obj.Pos(), len(lambda.Args), len(obj.Args))
 	}
 	newscope := expr.Scope
-	if len(expr.Args) > 0 {
+	if len(lambda.Args) > 0 {
 		newscope = maps.Clone(newscope)
-		for i, name := range expr.Args {
-			newscope[name] = Variable{obj.Args[i], nil, scope}
+		for i, name := range lambda.Args {
+			newscope[name] = Variable{obj.Args[i], scope}
 		}
 	}
-	return expr.Expr.Resolve(newscope, ev)
+	return lambda.Expr.Resolve(newscope, ev)
 }
 
 func (obj VarExpr) hashValue(w io.Writer) {
