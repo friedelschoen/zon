@@ -67,7 +67,7 @@ type LambdaExpr struct {
 }
 
 func (obj LambdaExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
-	return nil, nil, fmt.Errorf("%s: cannot evaluate lambda directly", obj.Pos())
+	return obj, nil, nil
 }
 
 func (obj LambdaExpr) hashValue(w io.Writer) {
@@ -80,4 +80,16 @@ func (obj LambdaExpr) hashValue(w io.Writer) {
 	}
 	fmt.Fprint(w, ")")
 	obj.Expr.hashValue(w)
+}
+
+func (obj LambdaExpr) encodeEnviron(root bool) (string, error) {
+	return "", fmt.Errorf("%s: unable to encode %T to environment", obj.Pos(), obj)
+}
+
+func (obj LambdaExpr) Link(resultname string) error {
+	return fmt.Errorf("%s: unable to link %T", obj.Pos(), obj)
+}
+
+func (obj LambdaExpr) JSON() any {
+	return nil
 }

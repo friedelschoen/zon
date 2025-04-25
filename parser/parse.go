@@ -171,20 +171,47 @@ func (p *Parser) parseValue() (types.Expression, error) {
 		return nil, err
 	}
 
-	for p.s.Token == TokenDot {
-		if err := p.s.Next(); err != nil {
-			return nil, err
-		}
-		if p.s.Token != TokenIdent {
-			return nil, p.expect(TokenIdent)
-		}
-		base = types.AttributeExpr{
-			Position: p.base(),
-			Base:     base,
-			Name:     p.s.Text(),
-		}
-		if err := p.s.Next(); err != nil {
-			return nil, err
+	for {
+		if p.s.Token == TokenDot {
+			if err := p.s.Next(); err != nil {
+				return nil, err
+			}
+			if p.s.Token != TokenIdent {
+				return nil, p.expect(TokenIdent)
+			}
+			base = types.AttributeExpr{
+				Position: p.base(),
+				Base:     base,
+				Name:     p.s.Text(),
+			}
+			if err := p.s.Next(); err != nil {
+				return nil, err
+			}
+		} else if p.s.Token == TokenLParen {
+			if err := p.s.Next(); err != nil {
+				return nil, err
+			}
+			var args []types.Expression
+			for p.s.Token != TokenRParen {
+				expr, err := p.parseValue()
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, expr)
+				if err := p.expect(TokenComma); err != nil {
+					break
+				}
+			}
+			base = types.CallExpr{
+				Position: p.base(),
+				Base:     base,
+				Args:     args,
+			}
+			if err := p.expect(TokenRParen); err != nil {
+				return nil, err
+			}
+		} else {
+			break
 		}
 	}
 	return base, nil
@@ -315,25 +342,6 @@ func (p *Parser) parseVar() (types.Expression, error) {
 	if err := p.expect(TokenIdent); err != nil {
 		return nil, err
 	}
-	if p.s.Token == TokenLParen {
-		if err := p.s.Next(); err != nil {
-			return nil, err
-		}
-		for p.s.Token != TokenRParen {
-			expr, err := p.parseValue()
-			if err != nil {
-				return nil, err
-			}
-			obj.Args = append(obj.Args, expr)
-			if err := p.expect(TokenComma); err != nil {
-				break
-			}
-		}
-		if err := p.expect(TokenRParen); err != nil {
-			return nil, err
-		}
-	}
-
 	return obj, nil
 }
 

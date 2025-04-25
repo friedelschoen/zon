@@ -18,21 +18,7 @@ func (obj VarExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error
 	if !ok {
 		return nil, nil, fmt.Errorf("%s: not in scope: %s", obj.Pos(), obj.Name)
 	}
-	lambda, ok := expr.Expr.(LambdaExpr)
-	if !ok {
-		return expr.Expr.Resolve(expr.Scope, ev) // normal variable
-	}
-	if len(lambda.Args) != len(obj.Args) {
-		return nil, nil, fmt.Errorf("%s: variable expecting %d arguments, got %d", obj.Pos(), len(lambda.Args), len(obj.Args))
-	}
-	newscope := expr.Scope
-	if len(lambda.Args) > 0 {
-		newscope = maps.Clone(newscope)
-		for i, name := range lambda.Args {
-			newscope[name] = Variable{obj.Args[i], scope}
-		}
-	}
-	return lambda.Expr.Resolve(newscope, ev)
+	return expr.Expr.Resolve(expr.Scope, ev)
 }
 
 func (obj VarExpr) hashValue(w io.Writer) {
@@ -67,4 +53,40 @@ func (obj AttributeExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr,
 func (obj AttributeExpr) hashValue(w io.Writer) {
 	fmt.Fprintf(w, "%T", obj)
 	fmt.Fprint(w, obj.Name)
+}
+
+type CallExpr struct {
+	Position
+
+	Base Expression
+	Args []Expression
+}
+
+func (obj CallExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
+	value, deps, err := obj.Base.Resolve(scope, ev)
+	if err != nil {
+		return nil, nil, err
+	}
+	lambda, ok := value.(LambdaExpr)
+	if !ok {
+		return nil, nil, fmt.Errorf("%s: unable to call %T", obj.Pos(), value)
+	}
+	if len(lambda.Args) != len(obj.Args) {
+		return nil, nil, fmt.Errorf("%s: variable expecting %d arguments, got %d", obj.Pos(), len(lambda.Args), len(obj.Args))
+	}
+	newscope := scope
+	if len(lambda.Args) > 0 {
+		newscope = maps.Clone(newscope)
+		for i, name := range lambda.Args {
+			newscope[name] = Variable{obj.Args[i], scope}
+		}
+	}
+	res, paths, err := lambda.Expr.Resolve(newscope, ev)
+	deps = append(deps, paths...)
+	return res, deps, err
+}
+
+func (obj CallExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "%T", obj)
+	obj.Base.hashValue(w)
 }
