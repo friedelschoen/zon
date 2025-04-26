@@ -91,6 +91,9 @@ func (obj MapExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error
 
 func (obj MapExpr) hashValue(w io.Writer) {
 	fmt.Fprint(w, "map")
+	for _, k := range obj.Extends {
+		k.hashValue(w)
+	}
 	for _, k := range obj.Exprs {
 		k.hashValue(w)
 	}
@@ -167,7 +170,7 @@ func (obj ArrayExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, err
 }
 
 func (obj ArrayExpr) hashValue(w io.Writer) {
-	fmt.Fprint(w, "list")
+	fmt.Fprint(w, "array")
 	for _, elem := range obj.Exprs {
 		elem.hashValue(w)
 	}

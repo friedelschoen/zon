@@ -66,8 +66,15 @@ func (obj StringExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, er
 }
 
 func (obj StringExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj.Content)
-	fmt.Fprint(w, obj.Content)
+	fmt.Fprintf(w, "string")
+	for _, c := range obj.Content {
+		fmt.Fprint(w, c)
+	}
+	for _, c := range obj.Interp {
+		if c != nil {
+			c.hashValue(w)
+		}
+	}
 }
 
 func StringConstant(content string, origin string) StringExpr {
@@ -89,7 +96,7 @@ func (obj NumberExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, er
 }
 
 func (obj NumberExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprintf(w, "number")
 	fmt.Fprint(w, obj.Value)
 }
 
@@ -116,7 +123,7 @@ func (obj BooleanExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, e
 }
 
 func (obj BooleanExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprintf(w, "boolean")
 	fmt.Fprint(w, obj.Value)
 }
 
@@ -149,6 +156,9 @@ func (obj PathExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, erro
 func (obj PathExpr) hashValue(w io.Writer) {
 	fmt.Fprintf(w, "%T", obj)
 	fmt.Fprint(w, obj.Name)
+	for _, dep := range obj.Depends {
+		dep.hashValue(w)
+	}
 }
 
 func (obj PathExpr) encodeEnviron(root bool) (string, error) {

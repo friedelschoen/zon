@@ -31,8 +31,8 @@ func (obj IncludeExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, e
 }
 
 func (obj IncludeExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
-	fmt.Fprint(w, obj.Name)
+	fmt.Fprintf(w, "include")
+	obj.Name.hashValue(w)
 }
 
 type DefineExpr struct {
@@ -55,7 +55,11 @@ func (obj DefineExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, er
 }
 
 func (obj DefineExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprintf(w, "define")
+	for k, v := range obj.Define {
+		fmt.Fprint(w, k)
+		v.hashValue(w)
+	}
 	obj.Expr.hashValue(w)
 }
 
@@ -71,14 +75,10 @@ func (obj LambdaExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, er
 }
 
 func (obj LambdaExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "fn(")
-	for i, a := range obj.Args {
-		if i > 0 {
-			fmt.Fprint(w, ",")
-		}
+	fmt.Fprint(w, "fn")
+	for _, a := range obj.Args {
 		fmt.Fprint(w, a)
 	}
-	fmt.Fprint(w, ")")
 	obj.Expr.hashValue(w)
 }
 

@@ -22,8 +22,11 @@ func (obj VarExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error
 }
 
 func (obj VarExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprintf(w, "var")
 	fmt.Fprint(w, obj.Name)
+	for _, a := range obj.Args {
+		a.hashValue(w)
+	}
 }
 
 type AttributeExpr struct {
@@ -51,8 +54,9 @@ func (obj AttributeExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr,
 }
 
 func (obj AttributeExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprintf(w, "attribute")
 	fmt.Fprint(w, obj.Name)
+	obj.Base.hashValue(w)
 }
 
 type CallExpr struct {
@@ -87,6 +91,9 @@ func (obj CallExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, erro
 }
 
 func (obj CallExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprintf(w, "call")
 	obj.Base.hashValue(w)
+	for _, a := range obj.Args {
+		a.hashValue(w)
+	}
 }

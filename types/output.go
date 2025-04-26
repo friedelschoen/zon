@@ -30,7 +30,7 @@ type OutputExpr struct {
 }
 
 func (obj OutputExpr) hashValue(w io.Writer) {
-	fmt.Fprintf(w, "%T", obj)
+	fmt.Fprintf(w, "output")
 	obj.Attrs.hashValue(w)
 }
 
