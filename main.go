@@ -91,9 +91,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	for _, d := range deps {
-		PrintPathTree(d, "")
-	}
+	_ = deps
+	// for _, d := range deps {
+	// 	PrintPathTree(d, "")
+	// }
 
 	if cleanup {
 		cwd, _ := os.Getwd()
