@@ -141,7 +141,7 @@ func (p *Parser) parseBase() (types.Expression, error) {
 	case TokenPath:
 		obj := types.PathExpr{
 			Position: p.base(),
-			Name:     p.s.Text(),
+			Name:     path.Join(p.cwd, p.s.Text()),
 		}
 		if obj.Name[0] != '/' {
 			obj.Name = path.Clean(p.cwd + "/" + obj.Name)

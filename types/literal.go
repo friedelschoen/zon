@@ -67,12 +67,10 @@ func (obj StringExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, er
 
 func (obj StringExpr) hashValue(w io.Writer) {
 	fmt.Fprintf(w, "string")
-	for _, c := range obj.Content {
-		fmt.Fprint(w, c)
-	}
-	for _, c := range obj.Interp {
-		if c != nil {
-			c.hashValue(w)
+	for i := range obj.Content {
+		fmt.Fprint(w, obj.Content[i])
+		if obj.Interp[i] != nil {
+			obj.Interp[i].hashValue(w)
 		}
 	}
 }
@@ -156,6 +154,12 @@ func (obj PathExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, erro
 func (obj PathExpr) hashValue(w io.Writer) {
 	fmt.Fprintf(w, "%T", obj)
 	fmt.Fprint(w, obj.Name)
+	s, err := os.Stat(obj.Name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unable to stat %s: %v\n", obj.Name, err)
+	} else {
+		fmt.Fprint(w, s.ModTime(), s.Mode())
+	}
 	for _, dep := range obj.Depends {
 		dep.hashValue(w)
 	}
