@@ -40,6 +40,7 @@ type Value interface {
 	encodeEnviron(root bool) (string, error)
 	Link(resultname string) error
 	JSON() any
+	Boolean() (bool, error)
 }
 
 type Position struct {

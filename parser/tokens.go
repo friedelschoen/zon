@@ -34,7 +34,37 @@ const (
 	TokenLParen                    /* ( */
 	TokenRParen                    /* ) */
 	TokenFunction                  /* fn */
+	TokenIf                        /* if */
+	TokenThen                      /* then */
+	TokenElse                      /* else */
 )
+
+var symbols = map[rune]Token{
+	'{': TokenLBrace,
+	'}': TokenRBrace,
+	'[': TokenLBracket,
+	']': TokenRBracket,
+	'(': TokenLParen,
+	')': TokenRParen,
+	':': TokenColon,
+	',': TokenComma,
+	'=': TokenEquals,
+	'.': TokenDot,
+}
+
+var keywords = map[string]Token{
+	"true":    TokenTrue,
+	"false":   TokenFalse,
+	"let":     TokenLet,
+	"include": TokenInclude,
+	"in":      TokenIn,
+	"with":    TokenWith,
+	"output":  TokenOutput,
+	"fn":      TokenFunction,
+	"if":      TokenIf,
+	"then":    TokenThen,
+	"else":    TokenElse,
+}
 
 func (t Token) String() string {
 	for k, v := range symbols {
@@ -75,28 +105,4 @@ func (t Token) String() string {
 		return "end-of-file"
 	}
 	return "<unknown>"
-}
-
-var symbols = map[rune]Token{
-	'{': TokenLBrace,
-	'}': TokenRBrace,
-	'[': TokenLBracket,
-	']': TokenRBracket,
-	'(': TokenLParen,
-	')': TokenRParen,
-	':': TokenColon,
-	',': TokenComma,
-	'=': TokenEquals,
-	'.': TokenDot,
-}
-
-var keywords = map[string]Token{
-	"true":    TokenTrue,
-	"false":   TokenFalse,
-	"let":     TokenLet,
-	"include": TokenInclude,
-	"in":      TokenIn,
-	"with":    TokenWith,
-	"output":  TokenOutput,
-	"fn":      TokenFunction,
 }

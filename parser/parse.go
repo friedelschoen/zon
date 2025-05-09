@@ -128,6 +128,8 @@ func (p *Parser) parseBase() (types.Expression, error) {
 		return p.parseEnclosed()
 	case TokenFunction:
 		return p.parseLambda()
+	case TokenIf:
+		return p.parseCondition()
 	case TokenNumber:
 		val, _ := strconv.ParseFloat(p.s.Text(), 64)
 		obj := types.NumberExpr{
@@ -419,6 +421,35 @@ func (p *Parser) parseEnclosed() (types.Expression, error) {
 		return nil, err
 	}
 	return obj, err
+}
+
+func (p *Parser) parseCondition() (types.Expression, error) {
+	obj := types.ConditionExpr{
+		Position: p.base(),
+	}
+	if err := p.expect(TokenIf); err != nil {
+		return nil, err
+	}
+	var err error
+	obj.Cond, err = p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.expect(TokenThen); err != nil {
+		return nil, err
+	}
+	obj.Truly, err = p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.expect(TokenElse); err != nil {
+		return nil, err
+	}
+	obj.Falsy, err = p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
 }
 
 func ParseFile(filename types.PathExpr) (types.Expression, error) {

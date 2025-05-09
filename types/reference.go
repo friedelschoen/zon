@@ -43,7 +43,7 @@ func (obj AttributeExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr,
 	}
 	switch mapval := val.(type) {
 	case MapValue:
-		val, ok := mapval.values[obj.Name]
+		val, ok := mapval.Values[obj.Name]
 		if !ok {
 			return nil, nil, fmt.Errorf("%s: map has no attribute %s", mapval.Pos(), obj.Name)
 		}

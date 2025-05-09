@@ -26,6 +26,10 @@ func (obj StringValue) Link(string) error {
 	return fmt.Errorf("%s: unable to symlink object of type: %T", obj.Pos(), obj)
 }
 
+func (obj StringValue) Boolean() (bool, error) {
+	return len(obj.Content) > 0, nil
+}
+
 type StringExpr struct {
 	Position
 
@@ -106,6 +110,10 @@ func (obj NumberExpr) Link(string) error {
 	return fmt.Errorf("%s: unable to symlink object of type: %T", obj.Pos(), obj)
 }
 
+func (obj NumberExpr) Boolean() (bool, error) {
+	return obj.Value != 0, nil
+}
+
 type BooleanExpr struct {
 	Position
 
@@ -118,6 +126,10 @@ func (obj BooleanExpr) JSON() any {
 
 func (obj BooleanExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	return obj, nil, nil
+}
+
+func (obj BooleanExpr) Boolean() (bool, error) {
+	return obj.Value, nil
 }
 
 func (obj BooleanExpr) hashValue(w io.Writer) {
@@ -149,6 +161,10 @@ func (obj PathExpr) JSON() any {
 
 func (obj PathExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
 	return obj, nil, nil
+}
+
+func (obj PathExpr) Boolean() (bool, error) {
+	return true, nil
 }
 
 func (obj PathExpr) hashValue(w io.Writer) {

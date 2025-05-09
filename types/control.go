@@ -93,3 +93,45 @@ func (obj LambdaExpr) Link(resultname string) error {
 func (obj LambdaExpr) JSON() any {
 	return nil
 }
+
+func (obj LambdaExpr) Boolean() (bool, error) {
+	return false, fmt.Errorf("lamba's do not have an boolean expression")
+}
+
+type ConditionExpr struct {
+	Position
+
+	Cond  Expression
+	Truly Expression
+	Falsy Expression
+}
+
+func (obj ConditionExpr) JSON() any {
+	return nil
+}
+
+func (obj ConditionExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
+	cond, deps, err := obj.Cond.Resolve(scope, ev)
+	if err != nil {
+		return nil, nil, err
+	}
+	var expr Expression
+	b, err := cond.Boolean()
+	if err != nil {
+		return nil, nil, err
+	}
+	if b {
+		expr = obj.Truly
+	} else {
+		expr = obj.Falsy
+	}
+	val, vdeps, err := expr.Resolve(scope, ev)
+	return val, append(deps, vdeps...), err
+}
+
+func (obj ConditionExpr) hashValue(w io.Writer) {
+	fmt.Fprintf(w, "condition")
+	obj.Cond.hashValue(w)
+	obj.Truly.hashValue(w)
+	obj.Falsy.hashValue(w)
+}

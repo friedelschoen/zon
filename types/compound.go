@@ -61,7 +61,7 @@ func (obj MapExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error
 
 	res := MapValue{
 		Position: obj.Position,
-		values:   make(map[string]Value),
+		Values:   make(map[string]Value),
 	}
 
 	for i := 0; i < len(values); i += 2 {
@@ -70,7 +70,7 @@ func (obj MapExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error
 		if !ok {
 			return nil, nil, fmt.Errorf("%s: expected string-key, got %T", key.Pos(), key)
 		}
-		res.values[keyStr.Content] = value
+		res.Values[keyStr.Content] = value
 	}
 
 	for _, extname := range obj.Extends {
@@ -82,7 +82,7 @@ func (obj MapExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error
 		if !ok {
 			return nil, nil, fmt.Errorf("%s: unable to extend %T", obj.Pos(), othervalue)
 		}
-		maps.Copy(res.values, otherast.values)
+		maps.Copy(res.Values, otherast.Values)
 		deps = append(deps, otherdeps...)
 	}
 
@@ -102,12 +102,12 @@ func (obj MapExpr) hashValue(w io.Writer) {
 type MapValue struct {
 	Position
 
-	values map[string]Value
+	Values map[string]Value
 }
 
 func (obj MapValue) JSON() any {
 	result := make(map[string]any)
-	for k, v := range obj.values {
+	for k, v := range obj.Values {
 		result[k] = v.JSON()
 	}
 	return result
@@ -119,11 +119,11 @@ func (obj MapValue) Link(string) error {
 
 func (obj MapValue) encodeEnviron(root bool) (string, error) {
 	if !root {
-		return "", fmt.Errorf("%s: unable to encode nested %T", obj.Pos(), obj.values)
+		return "", fmt.Errorf("%s: unable to encode nested %T", obj.Pos(), obj.Values)
 	}
 	var builder strings.Builder
 	first := true
-	for key, elem := range obj.values {
+	for key, elem := range obj.Values {
 		if !first {
 			builder.WriteByte(' ')
 		}
@@ -137,6 +137,10 @@ func (obj MapValue) encodeEnviron(root bool) (string, error) {
 		builder.WriteString(enc)
 	}
 	return builder.String(), nil
+}
+
+func (obj MapValue) Boolean() (bool, error) {
+	return len(obj.Values) > 0, nil
 }
 
 type ArrayExpr struct {
@@ -157,6 +161,10 @@ func (obj ArrayValue) JSON() any {
 		result[i] = v.JSON()
 	}
 	return result
+}
+
+func (obj ArrayValue) Boolean() (bool, error) {
+	return len(obj.Values) > 0, nil
 }
 
 func (obj ArrayExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {

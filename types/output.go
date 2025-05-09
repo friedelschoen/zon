@@ -12,7 +12,7 @@ import (
 )
 
 func getValue[T Value](resultname string, result MapValue, name string) (ret T, err error) {
-	valueAny, ok := result.values[name]
+	valueAny, ok := result.Values[name]
 	if !ok {
 		return ret, fmt.Errorf("%s: %s has no attribute '%s'", result.Pos(), resultname, name)
 	}
@@ -48,7 +48,7 @@ func (obj OutputExpr) build(result MapValue, outdir string, hashstr string, ev *
 	var cmdline []string
 	var token Value
 
-	if outputAny, ok := result.values["output"]; ok {
+	if outputAny, ok := result.Values["output"]; ok {
 		token = outputAny
 		install, err := getValue[StringValue]("output", result, "output")
 		if err != nil {
@@ -56,7 +56,7 @@ func (obj OutputExpr) build(result MapValue, outdir string, hashstr string, ev *
 		}
 
 		exec := ev.Interpreter
-		if _, ok := result.values["interpreter"]; ok {
+		if _, ok := result.Values["interpreter"]; ok {
 			execValue, err := getValue[StringValue]("output", result, "interpreter")
 			if err != nil {
 				return err
@@ -64,7 +64,7 @@ func (obj OutputExpr) build(result MapValue, outdir string, hashstr string, ev *
 			exec = execValue.Content
 		}
 		cmdline = []string{exec, "-e", "-c", install.Content, "builder"}
-	} else if builderAny, ok := result.values["builder"]; ok {
+	} else if builderAny, ok := result.Values["builder"]; ok {
 		token = builderAny
 		builder, err := getValue[StringValue]("output", result, "builder")
 		if err != nil {
@@ -75,7 +75,7 @@ func (obj OutputExpr) build(result MapValue, outdir string, hashstr string, ev *
 		return fmt.Errorf("%s: missing output or builder", obj.Pos())
 	}
 
-	if _, ok := result.values["args"]; ok {
+	if _, ok := result.Values["args"]; ok {
 		args, err := getValue[ArrayValue]("output", result, "args")
 		if err != nil {
 			return err
@@ -92,7 +92,7 @@ func (obj OutputExpr) build(result MapValue, outdir string, hashstr string, ev *
 	var builddir string
 	var deletebuilddir bool
 
-	if _, ok := result.values["source"]; ok {
+	if _, ok := result.Values["source"]; ok {
 		sourcedir, err := getValue[PathExpr]("output", result, "source")
 		if err != nil {
 			return err
@@ -114,7 +114,7 @@ func (obj OutputExpr) build(result MapValue, outdir string, hashstr string, ev *
 	}()
 
 	environ := append(os.Environ(), "out="+outdir)
-	for key, value := range result.values {
+	for key, value := range result.Values {
 		enc, err := value.encodeEnviron(true)
 		if err != nil {
 			return err
@@ -157,7 +157,7 @@ func (obj OutputExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, er
 	}
 
 	impure := false
-	if impureAny, ok := result.values["impure"]; ok {
+	if impureAny, ok := result.Values["impure"]; ok {
 		if impureVal, ok := impureAny.(BooleanExpr); ok {
 			impure = impureVal.Value
 		}
