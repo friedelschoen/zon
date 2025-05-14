@@ -135,3 +135,26 @@ func (obj ConditionExpr) hashValue(w io.Writer) {
 	obj.Truly.hashValue(w)
 	obj.Falsy.hashValue(w)
 }
+
+type OperationExpr struct {
+	Position
+
+	Operator string
+	Left     Expression
+	Right    Expression
+}
+
+func (obj OperationExpr) JSON() any {
+	return nil
+}
+
+func (obj OperationExpr) Resolve(scope Scope, ev *Evaluator) (Value, []PathExpr, error) {
+	return nil, nil, fmt.Errorf("not implemented")
+}
+
+func (obj OperationExpr) hashValue(w io.Writer) {
+	fmt.Fprint(w, "operation")
+	fmt.Fprint(w, obj.Operator)
+	obj.Left.hashValue(w)
+	obj.Right.hashValue(w)
+}

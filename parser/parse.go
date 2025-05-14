@@ -212,6 +212,23 @@ func (p *Parser) parseValue() (types.Expression, error) {
 			if err := p.expect(TokenRParen); err != nil {
 				return nil, err
 			}
+		} else if slices.Contains(operators, p.s.Token) {
+			pos := p.base()
+			op := p.s.Text()
+			if err := p.s.Next(); err != nil {
+				return nil, err
+			}
+
+			other, err := p.parseBase()
+			if err != nil {
+				return nil, err
+			}
+			base = types.OperationExpr{
+				Position: pos,
+				Operator: op,
+				Left:     base,
+				Right:    other,
+			}
 		} else {
 			break
 		}
@@ -281,7 +298,7 @@ func (p *Parser) parseDefinition() (types.Expression, error) {
 		if err := p.expect(TokenIdent); err != nil {
 			return nil, err
 		}
-		if err := p.expect(TokenEquals); err != nil {
+		if err := p.expect(TokenAssign); err != nil {
 			return nil, err
 		}
 		value, err := p.parseValue()

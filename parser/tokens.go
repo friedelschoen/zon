@@ -6,50 +6,59 @@ type Token int
 
 const (
 	TokenEOF          Token = iota /* end of file */
-	TokenLBrace                    /* { */
-	TokenRBrace                    /* } */
-	TokenLBracket                  /* [ */
-	TokenRBracket                  /* ] */
+	TokenAssign                    /* = */
 	TokenColon                     /* : */
 	TokenComma                     /* , */
-	TokenString                    /* "hello */
+	TokenDot                       /* . */
+	TokenElse                      /* else */
+	TokenEquals                    /* == */
+	TokenFalse                     /* false */
+	TokenFloat                     /* 10.12 */
+	TokenFunction                  /* fn */
+	TokenIdent                     /* identifier123 */
+	TokenIf                        /* if */
+	TokenIn                        /* in */
+	TokenInclude                   /* include */
 	TokenInterp                    /* \( */
 	TokenInterpEnd                 /* ) */
-	TokenStringEnd                 /* " */
-	TokenStringChar                /* char */
-	TokenStringEscape              /* \n, \t, ... */
-	TokenNumber                    /* 10 */
-	TokenFloat                     /* 10.12 */
-	TokenIdent                     /* identifier123 */
-	TokenTrue                      /* true */
-	TokenFalse                     /* false */
-	TokenLet                       /* let */
-	TokenIn                        /* in */
-	TokenEquals                    /* = */
-	TokenPath                      /* ../hello, ./foo */
-	TokenInclude                   /* include */
-	TokenDot                       /* . */
-	TokenWith                      /* with */
-	TokenOutput                    /* output */
+	TokenLBrace                    /* { */
+	TokenLBracket                  /* [ */
 	TokenLParen                    /* ( */
+	TokenLet                       /* let */
+	TokenNumber                    /* 10 */
+	TokenOutput                    /* output */
+	TokenPath                      /* ../hello, ./foo */
+	TokenRBrace                    /* } */
+	TokenRBracket                  /* ] */
 	TokenRParen                    /* ) */
-	TokenFunction                  /* fn */
-	TokenIf                        /* if */
+	TokenString                    /* "hello */
+	TokenStringChar                /* char */
+	TokenStringEnd                 /* " */
+	TokenStringEscape              /* \n, \t, ... */
 	TokenThen                      /* then */
-	TokenElse                      /* else */
+	TokenTrue                      /* true */
+	TokenUnequals                  /* != */
+	TokenWith                      /* with */
 )
 
-var symbols = map[rune]Token{
-	'{': TokenLBrace,
-	'}': TokenRBrace,
-	'[': TokenLBracket,
-	']': TokenRBracket,
-	'(': TokenLParen,
-	')': TokenRParen,
-	':': TokenColon,
-	',': TokenComma,
-	'=': TokenEquals,
-	'.': TokenDot,
+type tokenMatch struct {
+	text  string
+	token Token
+}
+
+var symbols = []tokenMatch{
+	{"==", TokenEquals},
+	{"!=", TokenUnequals},
+	{"{", TokenLBrace},
+	{"}", TokenRBrace},
+	{"[", TokenLBracket},
+	{"]", TokenRBracket},
+	{"(", TokenLParen},
+	{")", TokenRParen},
+	{":", TokenColon},
+	{",", TokenComma},
+	{"=", TokenAssign},
+	{".", TokenDot},
 }
 
 var keywords = map[string]Token{
@@ -66,10 +75,14 @@ var keywords = map[string]Token{
 	"else":    TokenElse,
 }
 
+var operators = []Token{
+	TokenEquals, TokenUnequals,
+}
+
 func (t Token) String() string {
-	for k, v := range symbols {
-		if v == t {
-			return fmt.Sprintf("'%c'", k)
+	for _, v := range symbols {
+		if t == v.token {
+			return fmt.Sprintf("'%s'", v.text)
 		}
 	}
 	for k, v := range keywords {

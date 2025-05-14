@@ -41,9 +41,16 @@ func NewScanner(r io.Reader) *Scanner {
 	}
 }
 
-func isSymbol(r rune) bool {
-	_, ok := symbols[r]
-	return ok
+var lastSymbol tokenMatch
+
+func isSymbol(r string) bool {
+	for _, v := range symbols {
+		if strings.HasPrefix(r, v.text) {
+			lastSymbol = v
+			return true
+		}
+	}
+	return false
 }
 
 func isPathPrefix(rs []rune) bool {
@@ -173,8 +180,8 @@ func (s *Scanner) scanString(chr rune) (bool, error) {
 		s.push(StateStringEscape)
 	case '"':
 		s.Token = TokenStringEnd
+		s.Start = s.End
 		s.consume(1)
-		s.Start = s.End - 1
 		s.pop()
 		return false, nil
 	case '\n':
@@ -196,8 +203,8 @@ func (s *Scanner) scanString(chr rune) (bool, error) {
 func (s *Scanner) scanMultiString(chr rune) (bool, error) {
 	if strings.HasPrefix(string(s.runes), "''") {
 		s.Token = TokenStringEnd
+		s.Start = s.End
 		s.consume(2)
-		s.Start = s.End - 2
 		s.pop()
 		return false, nil
 	}
@@ -211,8 +218,8 @@ func (s *Scanner) scanMultiString(chr rune) (bool, error) {
 		return false, fmt.Errorf("illegal token: end-of-line")
 	default:
 		s.Token = TokenStringChar
+		s.Start = s.End
 		s.consume(1)
-		s.Start = s.End - 1
 		return false, nil
 	}
 	return true, nil
@@ -275,26 +282,26 @@ func (s *Scanner) scanRoot(chr rune, mode State) (bool, error) {
 		s.Start = s.End
 	case chr == '"':
 		s.Token = TokenString
+		s.Start = s.End
 		s.consume(1)
-		s.Start = s.End - 1
 		s.push(StateString)
 		return false, nil
 	case strings.HasPrefix(string(s.runes), "''"):
 		s.Token = TokenString
+		s.Start = s.End
 		s.consume(2)
-		s.Start = s.End - 2
 		s.push(StateMultilineString)
 		return false, nil
 	case mode == StateInterp && chr == ')':
 		s.Token = TokenInterpEnd
+		s.Start = s.End
 		s.consume(1)
-		s.Start = s.End - 1
 		s.pop()
 		return false, nil
-	case isSymbol(chr):
-		s.Token = symbols[chr]
-		s.consume(1)
-		s.Start = s.End - 1
+	case isSymbol(string(s.runes)):
+		s.Token = lastSymbol.token
+		s.Start = s.End
+		s.consume(len(lastSymbol.text))
 		return false, nil
 	case unicode.IsLetter(chr):
 		s.push(StateIdent)
